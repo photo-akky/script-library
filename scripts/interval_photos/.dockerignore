@@ -1,0 +1,6 @@
+__pycache__/
+**/__pycache__/
+tests/
+.env
+README.md
+WEB_README.md

@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="scan-token" content="{{ scan_token }}">
+  <title>インターバル写真の分類</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <script defer src="{{ url_for('static', filename='app.js') }}"></script>
+</head>
+<body>
+  <main>
+    <header><span class="eyebrow">INTERVAL PHOTOS</span><h1>インターバル写真の分類</h1><p>撮影日時から連続したセットを探します。</p><span class="badge">候補確認のみ · 写真は変更しません</span></header>
+    <section class="panel" aria-labelledby="folder-heading">
+      <h2 id="folder-heading">1. 撮影フォルダを選択</h2>
+      <form id="folder-form"><label for="folder-path">写真ルートからの相対パス</label><div class="path-row"><input id="folder-path" placeholder="例：2026/10/11" autocomplete="off"><button type="submit" class="secondary">開く</button></div></form>
+      <div class="folder-location"><strong id="current-folder">写真ルート</strong><button id="parent-folder" class="secondary" type="button" hidden>上の階層へ</button></div>
+      <div id="folders" class="folder-list"></div>
+      <p class="hint">選択したフォルダ直下の JPG/JPEG が対象です。RAW は同じフォルダと直下の RAW フォルダから探します。</p>
+    </section>
+    <section class="panel" aria-labelledby="settings-heading">
+      <h2 id="settings-heading">2. 分類条件</h2>
+      <form id="scan-form">
+        <div class="settings-grid">
+          <label>最小間隔（秒）<input id="min-interval" type="number" min="0.1" step="any" value="3" required></label>
+          <label>最大間隔（秒）<input id="max-interval" type="number" min="0.1" step="any" value="30" required></label>
+          <label>許容幅（±秒）<input id="tolerance" type="number" min="0" step="any" value="1" required></label>
+          <label>最小枚数<input id="min-count" type="number" min="5" step="1" value="5" required></label>
+        </div>
+        <p class="hint">Exif の撮影日時を使用します。途中抜けを補完せず、間隔が許容幅を外れた場所で分けます。</p>
+        <button id="scan-button" type="submit" disabled>このフォルダを解析</button>
+      </form>
+    </section>
+    <div id="status" role="status" aria-live="polite"></div>
+    <section id="results" hidden aria-labelledby="results-heading"><h2 id="results-heading">撮影セットの候補</h2><div id="summary" class="summary"></div><div id="notices"></div><div id="sets"></div></section>
+    <dialog id="preview-dialog" aria-labelledby="preview-title">
+      <div class="preview-header"><h2 id="preview-title">写真のプレビュー</h2><button id="close-preview" type="button" class="secondary">閉じる</button></div>
+      <p id="preview-time"></p>
+      <p id="preview-status" role="status" aria-live="polite"></p>
+      <img id="preview-image" alt="" hidden>
+      <div class="preview-navigation"><button id="previous-preview" class="secondary" type="button">前の写真</button><span id="preview-position"></span><button id="next-preview" class="secondary" type="button">次の写真</button></div>
+    </dialog>
+    <footer>この画面は候補の確認専用です。移動機能はまだありません。</footer>
+  </main>
+</body>
+</html>

@@ -1,0 +1,29 @@
+services:
+  interval-preview:
+    build:
+      context: .
+      args:
+        APP_UID: "${APP_UID:?Set APP_UID in .env}"
+        APP_GID: "${APP_GID:?Set APP_GID in .env}"
+    image: interval-photos-preview:local
+    user: "${APP_UID:?Set APP_UID in .env}:${APP_GID:?Set APP_GID in .env}"
+    ports:
+      - "${NAS_BIND_IP:-127.0.0.1}:8088:8080"
+    environment:
+      PHOTO_ROOT: /photos
+      PHOTO_TIMEZONE: Asia/Tokyo
+    volumes:
+      - type: bind
+        source: "${PHOTO_SOURCE:?Set PHOTO_SOURCE in .env to the NAS photo directory}"
+        target: /photos
+        read_only: true
+        bind:
+          create_host_path: false
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped

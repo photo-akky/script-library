@@ -1,0 +1,128 @@
+# NAS で動く候補確認 Web GUI
+
+Docker 内で JPG の Exif を読み取り、インターバル撮影候補をブラウザに表示します。セットの先頭・中央・末尾と直前・直後のサムネイルを表示し、クリックで拡大できます。写真のコピー・移動・削除機能はありません。写真ルートは読み取り専用です。Mac の作成日時と NAS の作成日時が異なることを確認したため、NAS 版では Exif の `DateTimeOriginal` を使用します。
+
+## UGREEN DXP4800 Plus への配置
+
+このフォルダのファイルを NAS のアプリ用フォルダへコピーし、SSH でそのフォルダに移動してください。写真ルートは `.env` の `PHOTO_SOURCE` で指定し、`.env` の `APP_UID` / `APP_GID` の権限で実行します。
+
+```sh
+cp .env.example .env
+```
+
+`.env` の `PHOTO_SOURCE` を NAS 上の写真ルートの絶対パスに変更してください。実在のパスは Git 管理対象外の `.env` にだけ保存します。未設定なら Compose は起動せず、存在しないフォルダも自動作成しません。コンテナ内の参照先 `/photos` は共通です。
+
+NAS の SSH で `id -u` と `id -g` を実行し、その数値を `.env` の `APP_UID` と `APP_GID` に設定してください。両方とも必須です。Docker イメージの既定ユーザーと実行時のユーザーに反映され、更新スクリプトも同じユーザーを使います。
+
+`.env` の `NAS_BIND_IP` を NAS の LAN IP に変更してください。そのアドレスのポート8088で待ち受けます。認証機能はまだないため、家庭内の信頼できる LAN で候補確認に使い、インターネットには公開しないでください。既定の `127.0.0.1` のままなら SSH 転送で使えます。
+
+```sh
+sudo docker compose up -d --build
+sudo docker compose logs --tail=50
+```
+
+Mac のブラウザで `http://NASのLAN-IP:8088` を開きます。既定のループバック設定で使う場合は、Mac で次を実行し、ブラウザで `http://localhost:8088` を開きます。
+
+```sh
+ssh -N -L 8088:127.0.0.1:8088 nas-user@NASのLAN-IP
+```
+
+画面で `2026/10/11` などの撮影フォルダを選び、解析します。選択フォルダ直下の JPG/JPEG のみが対象です。RAW は同じフォルダと直下の `RAW` フォルダで同名のファイルを探します。
+
+- 既定は3〜30秒、許容幅±1秒、5枚以上。欠落分を補完せず、候補を重複させません。
+- ExifTool が対応する秒未満情報とタイムゾーンを読み取ります。タイムゾーンがない写真には `PHOTO_TIMEZONE`（既定 `Asia/Tokyo`）を使用し、画面に件数を表示します。
+- 撮影日時を読み取れない JPG は除外し、ファイル名を表示します。更新日時・作成日時には切り替えません。
+- サムネイルは最大360×270、拡大画像は最大1600×1200。JPG の縮小デコードと向き補正を使い、RAW は画像生成に使いません。Sony の JPG などが MPO と認識される場合も、先頭の主画像からプレビューを生成します。全枚ギャラリーは開くまで生成せず、画面に近い画像から読み込みます。
+- 直前・直後は撮影日時を取得できた JPG の時刻順で選び、セット端との時間差を表示します。日時なしの写真はここでも対象外です。
+- 画像キャッシュはコンテナの `/tmp` 内、上限32MiB・256件。再起動で消えます。画像生成は1件ずつ行い、元写真の変更を検知した場合は再解析を求めます。
+- シンボリックリンクをたどるフォルダ一覧と写真は対象外です。写真ルート外のパスは拒否します。
+- 解析は1件ずつ、Exif 読み取りの制限時間は180秒です。タイムアウト時は小さいフォルダで試してください。
+- NAS の移動先フォルダはまだマウントしません。既存写真の削除権限も、この段階では必要ありません。
+
+停止と再起動:
+
+```sh
+sudo docker compose down
+sudo docker compose up -d
+```
+
+## Docker Compose が利用できない場合
+
+```sh
+export PHOTO_SOURCE=/path/to/photos
+export APP_UID="$(id -u)" APP_GID="$(id -g)"
+sudo docker build --build-arg APP_UID="$APP_UID" --build-arg APP_GID="$APP_GID" -t interval-photos-preview:local .
+sudo docker run -d --name interval-preview \
+  --user "$APP_UID:$APP_GID" --read-only --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --tmpfs /tmp:rw,size=64m,mode=1777 \
+  --mount "type=bind,src=${PHOTO_SOURCE:?Set PHOTO_SOURCE},dst=/photos,readonly" \
+  -p 127.0.0.1:8088:8080 \
+  --restart unless-stopped interval-photos-preview:local
+```
+
+この例の `/path/to/photos` は実際の写真ルートに置き換えてください。`docker run` は `.env` を自動で読みません。この場合も上記の SSH 転送で操作できます。既存の同名コンテナは自動で削除しません。
+
+## NAS 上の既存インストールを更新
+
+起動中のサービスを停止せず、まずコードを更新します。既存の `compose.yaml` と `.env` は保持するため、UGOS 用に設定したアクセス方法を維持できます。
+
+```sh
+cd /path/to/app/scripts/interval_photos
+```
+
+上の `/path/to/app` は実際の配置先に置き換えてください。
+
+初回だけ更新スクリプトを取得します:
+
+```sh
+sudo docker run --rm --user "$(id -u):$(id -g)" \
+  --mount "type=bind,src=$PWD,dst=/app" \
+  alpine:3.21 wget -O /app/update-nas.sh \
+  https://raw.githubusercontent.com/photo-akky/script-library/nas-interval-preview/scripts/interval_photos/update-nas.sh
+```
+
+続いて更新・再ビルドします。2つ目のコマンドは更新成功後に実行してください。
+
+```sh
+sh update-nas.sh
+sudo docker compose up -d --build
+```
+
+再ビルド完了後、ブラウザを再読み込みしてもう一度解析してください。公開リポジトリから取得する手順です。非公開に変更した場合は認証を使う取得方法が別途必要です。
+
+## 以前の固定パス設定から移行する場合
+
+更新スクリプトはローカルの `compose.yaml` を保持します。そのため、既存環境では `.env` に `PHOTO_SOURCE` を追加したうえで、`compose.yaml` の写真マウントの `source:` を次のように変更してください。他の設定はそのまま保持します。
+
+```yaml
+source: "${PHOTO_SOURCE:?Set PHOTO_SOURCE in .env to the NAS photo directory}"
+```
+
+UID/GID が固定されている既存環境では、さらに `.env` に `APP_UID` / `APP_GID` を追加し、Compose の `user` と `build` を変更します。
+
+```yaml
+build:
+  context: .
+  args:
+    APP_UID: "${APP_UID:?Set APP_UID in .env}"
+    APP_GID: "${APP_GID:?Set APP_GID in .env}"
+user: "${APP_UID:?Set APP_UID in .env}:${APP_GID:?Set APP_GID in .env}"
+```
+
+`.env` を丸ごと上書きせず、既存の `NAS_BIND_IP` などの値を保持してください。変更後に `sudo docker compose up -d --build` で再作成します。
+
+## 開発時の検証
+
+リポジトリのルートから:
+
+```sh
+cd scripts/interval_photos
+python3 -m venv /tmp/interval-web-venv
+/tmp/interval-web-venv/bin/pip install -r requirements.lock
+/tmp/interval-web-venv/bin/python -m unittest discover -s tests -v
+```
+
+Web のテストは Flask が必要です。CLI だけを利用する場合は引き続き外部パッケージ不要です。
+
+BuildKit / buildx がない NAS でも通常の Docker ビルドで利用できます。証明書付きプロキシを使う開発環境では別途、信頼済み CA の設定が必要です。TLS とパッケージ署名の検証は無効にしません。

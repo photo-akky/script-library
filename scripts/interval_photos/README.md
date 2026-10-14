@@ -33,3 +33,7 @@ NAS が撮影時の作成日時を保持していることを候補一覧で確�
 ```sh
 python3 -m unittest discover -s tests -v
 ```
+
+## NAS の Web GUI
+
+NAS 内で Exif を読み取り、ブラウザで候補確認できる Docker 版は [Web GUI の手順](WEB_README.md) を参照してください。Web 版は候補表示のみで、移動機能はまだありません。
