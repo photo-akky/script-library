@@ -18,6 +18,14 @@ const node = (tag, text, className) => {
   if (className) element.className = className;
   return element;
 };
+function formatTime(value) {
+  // Keep the camera's local clock; do not convert to the browser's timezone.
+  return value.replace(/(?:Z|[+-]\d{2}:\d{2})$/, '').replace('T', ' ')
+    .replace(/\.(\d+)$/, (_, fraction) => `.${fraction.replace(/0+$/, '').padEnd(3, '0')}`);
+}
+function formatGap(value) {
+  return value === null || value === undefined ? '—' : `${Number(value.toFixed(6))} 秒`;
+}
 function status(message, error = false) {
   byId('status').textContent = message;
   byId('status').className = error ? 'error' : '';
@@ -93,7 +101,7 @@ function openPreview(files, index) {
   previewIndex = index;
   const file = files[index];
   byId('preview-title').textContent = file.jpg;
-  byId('preview-time').textContent = file.time.replace('T', ' ');
+  byId('preview-time').textContent = formatTime(file.time);
   byId('preview-position').textContent = `${index + 1} / ${files.length}`;
   byId('previous-preview').disabled = index === 0;
   byId('next-preview').disabled = index + 1 === files.length;
@@ -133,7 +141,7 @@ function photoTile(file, label, files, index, deferred = false) {
   else image.src = file.thumbnail_url;
   button.append(image, error);
   button.addEventListener('click', () => openPreview(files, index));
-  figure.append(button, node('figcaption', file.jpg), node('time', file.time.replace('T', ' '), 'photo-time'));
+  figure.append(button, node('figcaption', file.jpg), node('time', formatTime(file.time), 'photo-time'));
   if (file.gap !== undefined) figure.append(node('span', `セット端との間隔 ${file.gap.toFixed(2)} 秒`, 'photo-gap'));
   return figure;
 }
@@ -186,7 +194,7 @@ function renderResults(data) {
     card.append(selectLabel);
     if (group.copy_error) card.append(node('p', group.copy_error, 'notice'));
     else card.append(node('p', `保存先：${group.target_folder} / ${group.copy_file_count} ファイル・${formatBytes(group.copy_bytes)}`, 'hint'));
-    card.append(node('p', `${group.start.replace('T', ' ')} ～ ${group.end.replace('T', ' ')}`, 'set-time'));
+    card.append(node('p', `${formatTime(group.start)} ～ ${formatTime(group.end)}`, 'set-time'));
     card.append(node('p', `約 ${group.interval.toFixed(2)} 秒間隔（${group.gap_min.toFixed(2)} ～ ${group.gap_max.toFixed(2)} 秒） · RAW あり ${group.paired_count} / ${group.count} 枚`));
     const timelineFiles = [group.before, ...group.files, group.after].filter(Boolean);
     const offset = group.before ? 1 : 0;
@@ -223,12 +231,12 @@ function renderResults(data) {
     const table = node('table');
     const head = node('thead');
     const row = node('tr');
-    for (const title of ['JPG', '撮影日時', 'RAW']) row.append(node('th', title));
+    for (const title of ['JPG', '撮影日時', '前の写真との差', 'RAW']) row.append(node('th', title));
     head.append(row);
     const body = node('tbody');
     for (const file of group.files) {
       const row = node('tr');
-      row.append(node('td', file.jpg), node('td', file.time.replace('T', ' ')), node('td', file.raw.join(', ') || 'なし'));
+      row.append(node('td', file.jpg), node('td', formatTime(file.time)), node('td', formatGap(file.previous_gap)), node('td', file.raw.join(', ') || 'なし'));
       body.append(row);
     }
     table.append(head, body);

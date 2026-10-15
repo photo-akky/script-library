@@ -135,6 +135,20 @@ class WebTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(len(response.get_json()['sets']), 1)
 
+    def test_previous_gap_and_fractional_times(self):
+        records = self.add_photos([0, 10, 20, 30, 40, 50])
+        # The first photo is outside the set, but remains its predecessor.
+        records[0]['DateTimeOriginal'] = '2026:10:11 15:07:00'
+        for record in records:
+            record['SubSecTimeOriginal'] = '125'
+        records[2]['SubSecTimeOriginal'] = '375'
+        with patch.object(web, 'read_exif', return_value=records):
+            group = self.post_scan().get_json()['sets'][0]
+        self.assertEqual(group['files'][0]['time'], '2026-10-11T15:08:10.125000+09:00')
+        self.assertEqual([file['previous_gap'] for file in group['files']],
+                         [70, 10.25, 9.75, 10, 10])
+        self.assertIsNone(group['before']['previous_gap'])
+
     def test_csrf_and_invalid_options(self):
         self.assertEqual(self.client.post('/api/scan', json={}).status_code, 403)
         for options in [{'min_count': 4}, {'min_count': 5.5}, {'min_interval': True}, {'max_interval': 0}, {'tolerance': 3}, {'tolerance': -1}]:

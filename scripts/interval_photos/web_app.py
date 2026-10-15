@@ -108,8 +108,16 @@ def scan_folder(folder, zone, executable, minimum, maximum, tolerance, count):
     ordered = sorted(photos, key=lambda item: (item[1], item[0].name))
     positions = {path: index for index, (path, _) in enumerate(ordered)}
 
+    def display_time(path):
+        precision = 'microseconds' if str(records[str(path)].get('SubSecTimeOriginal', '')) else 'seconds'
+        return dates[path].isoformat(timespec=precision)
+
     def describe_file(path):
-        return {'jpg': path.name, 'time': dates[path].isoformat(),
+        index = positions[path]
+        previous_gap = ((dates[path] - dates[ordered[index - 1][0]]).total_seconds()
+                        if index > 0 else None)
+        return {'jpg': path.name, 'time': display_time(path),
+                'previous_gap': previous_gap,
                 'raw': sorted(partners.get(path.stem.casefold(), []))}
 
     groups = []
@@ -126,7 +134,7 @@ def scan_folder(folder, zone, executable, minimum, maximum, tolerance, count):
             after['gap'] = ordered[last_index + 1][1] - group[-1][1]
         groups.append({'number': number, 'count': len(group), 'interval': interval,
                        'gap_min': min(gaps), 'gap_max': max(gaps),
-                       'start': dates[group[0][0]].isoformat(), 'end': dates[group[-1][0]].isoformat(),
+                       'start': display_time(group[0][0]), 'end': display_time(group[-1][0]),
                        'paired_count': sum(bool(f['raw']) for f in files), 'files': files,
                        'before': before, 'after': after})
     return {'jpg_count': len(jpgs), 'dated_count': len(photos), 'excluded': excluded,
