@@ -12,12 +12,13 @@ services:
     environment:
       PHOTO_ROOT: /photos
       COPY_ROOT: /copies
+      ALLOW_MOVE: "1"
       PHOTO_TIMEZONE: Asia/Tokyo
     volumes:
       - type: bind
         source: "${PHOTO_SOURCE:?Set PHOTO_SOURCE in .env to the NAS photo directory}"
         target: /photos
-        read_only: true
+        read_only: false
         bind:
           create_host_path: false
       - type: bind

@@ -36,4 +36,4 @@ python3 -m unittest discover -s tests -v
 
 ## NAS の Web GUI
 
-NAS 内で Exif を読み取り、ブラウザで候補確認できる Docker 版は [Web GUI の手順](WEB_README.md) を参照してください。Web 版は候補確認と内容検証付きコピーに対応し、元ファイルは保持します。
+NAS 内で Exif を読み取り、ブラウザで候補確認できる Docker 版は [Web GUI の手順](WEB_README.md) を参照してください。Web 版は候補確認と内容検証付きコピー・移動に対応し、コピーでは元ファイルを保持し、移動では全件照合後に元ファイルを削除します。

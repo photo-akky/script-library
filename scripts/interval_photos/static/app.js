@@ -6,6 +6,8 @@ let scanning = false;
 let loadingFolder = false;
 let currentScan = null;
 let copyEnabled = false;
+let moveEnabled = false;
+let invalidatedMove = null;
 let copying = false;
 let copySubmitting = false;
 let pollTimer = null;
@@ -183,7 +185,7 @@ function renderResults(data) {
     selectLabel.append(checkbox, node('span', `セット ${group.number} · ${group.count} 枚`));
     card.append(selectLabel);
     if (group.copy_error) card.append(node('p', group.copy_error, 'notice'));
-    else card.append(node('p', `コピー先：${group.target_folder} / ${group.copy_file_count} ファイル・${formatBytes(group.copy_bytes)}`, 'hint'));
+    else card.append(node('p', `保存先：${group.target_folder} / ${group.copy_file_count} ファイル・${formatBytes(group.copy_bytes)}`, 'hint'));
     card.append(node('p', `${group.start.replace('T', ' ')} ～ ${group.end.replace('T', ' ')}`, 'set-time'));
     card.append(node('p', `約 ${group.interval.toFixed(2)} 秒間隔（${group.gap_min.toFixed(2)} ～ ${group.gap_max.toFixed(2)} 秒） · RAW あり ${group.paired_count} / ${group.count} 枚`));
     const timelineFiles = [group.before, ...group.files, group.after].filter(Boolean);
@@ -273,7 +275,11 @@ function updateCopyButtons() {
   const blocked = !copyEnabled || copying || copySubmitting || scanning || loadingFolder || !currentScan;
   for (const box of document.querySelectorAll('.set-checkbox')) box.disabled = blocked || box.dataset.copyable !== 'true';
   const groups = selectedGroups();
-  byId('start-copy').disabled = blocked || !groups.length;
+  byId('operation').disabled = copying || copySubmitting;
+  byId('move-option').disabled = !moveEnabled;
+  const moving = byId('operation').value === 'move';
+  byId('start-copy').textContent = moving ? '選択したセットを移動' : '選択したセットをコピー';
+  byId('start-copy').disabled = blocked || !groups.length || (moving && !moveEnabled);
   byId('select-all').disabled = blocked || !currentScan.sets.some(group => !group.copy_error);
   byId('selection-summary').textContent = groups.length ? `${groups.length} セット・${groups.reduce((n,g)=>n+g.copy_file_count,0)} ファイル・${formatBytes(groups.reduce((n,g)=>n+g.copy_bytes,0))}` : 'セットを選択してください。';
 }
@@ -281,13 +287,18 @@ function showCopyJob(job) {
   copying = Boolean(job && job.state === 'running');
   byId('copy-job').hidden = !job;
   if (job) {
-    const percent = job.bytes_total ? Math.min(100, job.bytes_copied / job.bytes_total * 100) : 0;
+    const percent = job.bytes_total ? Math.min(100, (job.bytes_copied + (job.bytes_reused || 0)) / job.bytes_total * 100) : 0;
     byId('copy-progress').value = job.state === 'completed' ? 100 : percent;
-    byId('copy-progress-text').textContent = `${job.phase} · 内容検証済み ${job.files_done} / ${job.files_total} ファイル · 転送済み ${formatBytes(job.bytes_copied)} / ${formatBytes(job.bytes_total)}`;
-    byId('copy-current').textContent = job.state === 'completed' ? 'コピーと内容検証が完了しました。元ファイルは保持しています。' : job.current_file;
+    byId('copy-progress-text').textContent = `${job.phase} · 内容検証済み ${job.files_done} / ${job.files_total} ファイル · 転送 ${formatBytes(job.bytes_copied)} / 全体 ${formatBytes(job.bytes_total)}${job.bytes_reused ? ` · 既存データ照合 ${formatBytes(job.bytes_reused)}` : ""}${job.operation === "move" ? ` · 元ファイル削除済み ${job.sources_removed || 0} / ${job.files_total}` : ""}`;
+    byId('copy-current').textContent = job.state === 'completed' ? (job.operation === 'move' ? '移動が完了しました。候補を再解析してください。' : 'コピーと内容検証が完了しました。元ファイルは保持しています。') : job.current_file;
     byId('copy-error').hidden = !job.error;
-    byId('copy-error').textContent = job.error ? `${job.error} 元ファイルは保持しています。コピー先の COPY_INCOMPLETE と copy-log.jsonl を確認してください。` : '';
+    byId('copy-error').textContent = job.error ? `${job.error} ${job.operation === 'move' ? `元ファイル削除済み ${job.sources_removed || 0} 件。保存先の MOVE_INCOMPLETE と move-log.jsonl、および元フォルダを確認してください。` : '元ファイルは保持しています。保存先の COPY_INCOMPLETE と copy-log.jsonl を確認してください。'}` : '';
     byId('copy-destinations').replaceChildren(...job.destinations.map(name=>node('li', name)));
+    if (job.operation === 'move' && (job.state === 'completed' || job.sources_removed > 0) && invalidatedMove !== `${job.id}:${job.sources_removed}:${job.state}`) {
+      invalidatedMove = `${job.id}:${job.sources_removed}:${job.state}`;
+      currentScan = null;
+      document.querySelectorAll('.set-checkbox').forEach(box=>{box.checked=false;});
+    }
   }
   updateCopyButtons();
 }
@@ -296,7 +307,8 @@ async function pollCopy() {
   try {
     const data = await requestJSON('/api/copy/status');
     copyEnabled = data.copy_enabled;
-    byId('copy-config').textContent = copyEnabled ? 'コピー先は NAS の PHOTO_DESTINATION で設定したルートです。既存フォルダは上書きしません。' : 'コピー先が未設定です。NAS の PHOTO_DESTINATION と保存先マウントを設定してください。';
+    moveEnabled = Boolean(data.move_enabled);
+    byId('copy-config').textContent = copyEnabled ? '保存先は PHOTO_DESTINATION で設定したルートです。移動時は既存コピーも全件照合し、一致した場合だけ元ファイルを削除します。' : 'コピー先が未設定です。NAS の PHOTO_DESTINATION と保存先マウントを設定してください。';
     showCopyJob(data.job);
     if (copying) pollTimer = setTimeout(pollCopy, 1000);
   } catch (error) {
@@ -304,6 +316,7 @@ async function pollCopy() {
     pollTimer = setTimeout(pollCopy, 3000);
   }
 }
+byId('operation').addEventListener('change', updateCopyButtons);
 byId('select-all').addEventListener('click', () => {
   const boxes = [...document.querySelectorAll('.set-checkbox:not(:disabled)')];
   const select = !boxes.every(box=>box.checked);
@@ -314,11 +327,14 @@ byId('start-copy').addEventListener('click', async () => {
   const groups = selectedGroups();
   if (!groups.length || copying || copySubmitting || !currentScan) return;
   const summary = groups.map(group=>`${group.target_folder}（${group.copy_file_count} ファイル）`).join('\n');
-  if (!window.confirm(`次のセットをコピーします。元ファイルは保持します。\n\n${summary}`)) return;
+  const operation = byId('operation').value;
+  if (operation === 'move' && !moveEnabled) return;
+  const message = operation === 'move' ? '次のセットを移動します。全件の内容照合後、元の JPG / RAW を削除します。既存コピーがあれば一致を確認して利用します。' : '次のセットをコピーします。元ファイルは保持します。';
+  if (!window.confirm(`${message}\n\n${summary}`)) return;
   copySubmitting = true;
   updateCopyButtons();
   try {
-    const data = await requestJSON('/api/copy', {method:'POST', headers:{'Content-Type':'application/json','X-Scan-Token':token}, body:JSON.stringify({scan_id:currentScan.scan_id,sets:groups.map(group=>group.number)})});
+    const data = await requestJSON('/api/copy', {method:'POST', headers:{'Content-Type':'application/json','X-Scan-Token':token}, body:JSON.stringify({scan_id:currentScan.scan_id,sets:groups.map(group=>group.number),operation})});
     showCopyJob(data.job);
     pollCopy();
   } catch (error) {

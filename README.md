@@ -8,4 +8,4 @@
 
 ## スクリプト
 
-- [インターバル撮影の写真分類](scripts/interval_photos/README.md)：Mac のファイル作成日時から撮影セットを抽出し、JPG と RAW をまとめて移動します。[NAS 向け Web GUI](scripts/interval_photos/WEB_README.md) は Exif による候補確認と NAS 内の内容検証付きコピーに対応します。
+- [インターバル撮影の写真分類](scripts/interval_photos/README.md)：Mac のファイル作成日時から撮影セットを抽出し、JPG と RAW をまとめて移動します。[NAS 向け Web GUI](scripts/interval_photos/WEB_README.md) は Exif による候補確認と NAS 内の内容検証付きコピー・移動に対応します。

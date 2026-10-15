@@ -156,6 +156,7 @@ def create_app(config=None):
     app.config.update(PHOTO_ROOT=os.environ.get('PHOTO_ROOT', '/photos'),
                       PHOTO_TIMEZONE=os.environ.get('PHOTO_TIMEZONE', 'Asia/Tokyo'),
                       COPY_ROOT=os.environ.get('COPY_ROOT'),
+                      ALLOW_MOVE=os.environ.get('ALLOW_MOVE') == '1',
                       EXIFTOOL=os.environ.get('EXIFTOOL', 'exiftool'),
                       PREVIEW_CACHE=os.environ.get('PREVIEW_CACHE', '/tmp/interval-preview-cache'),
                       MAX_CONTENT_LENGTH=16 * 1024,
@@ -164,7 +165,7 @@ def create_app(config=None):
         app.config.update(config)
     root = Path(app.config['PHOTO_ROOT']).resolve()
     zone = ZoneInfo(app.config['PHOTO_TIMEZONE'])
-    copy_manager = CopyManager(root, app.config['COPY_ROOT'])
+    copy_manager = CopyManager(root, app.config['COPY_ROOT'], allow_move=app.config['ALLOW_MOVE'])
     app.extensions['copy_manager'] = copy_manager
     scan_lock = threading.Lock()
     image_cache = ImageCache(app.config['PREVIEW_CACHE'])
@@ -222,7 +223,7 @@ def create_app(config=None):
 
     @app.get('/api/copy/status')
     def copy_status():
-        return jsonify(copy_enabled=copy_manager.destination_root is not None, job=copy_manager.status())
+        return jsonify(copy_enabled=copy_manager.destination_root is not None, move_enabled=copy_manager.allow_move, job=copy_manager.status())
 
     @app.post('/api/copy')
     def start_copy():
@@ -231,7 +232,7 @@ def create_app(config=None):
         data = request.get_json(silent=True)
         if not isinstance(data, dict):
             raise CopyError('コピー条件の指定が不正です。')
-        job = copy_manager.start(data.get('scan_id'), data.get('sets'))
+        job = copy_manager.start(data.get('scan_id'), data.get('sets'), data.get('operation', 'copy'))
         return jsonify(job=job), 202
 
     @app.post('/api/scan')

@@ -66,3 +66,5 @@ footer { margin-top: 28px; }
 .copy-actions { display: flex; gap: 12px; flex-wrap: wrap; }
 #copy-progress { width: 100%; accent-color: #2d6244; height: 20px; }
 #copy-destinations { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+
+#operation { width: 100%; max-width: 520px; padding: 12px; margin: 8px 0 20px; border: 1px solid #bac6b9; border-radius: 8px; font: inherit; background: white; }
