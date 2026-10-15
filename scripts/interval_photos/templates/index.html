@@ -24,10 +24,10 @@
         <div class="settings-grid">
           <label>最小間隔（秒）<input id="min-interval" type="number" min="0.1" step="any" value="3" required></label>
           <label>最大間隔（秒）<input id="max-interval" type="number" min="0.1" step="any" value="30" required></label>
-          <label>許容幅（±秒）<input id="tolerance" type="number" min="0" step="any" value="1" required></label>
+          <label>許容幅（秒）<input id="tolerance" type="number" min="0" step="any" value="1" required></label>
           <label>最小枚数<input id="min-count" type="number" min="5" step="1" value="5" required></label>
         </div>
-        <p class="hint">Exif の撮影日時を使用します。途中抜けを補完せず、間隔が許容幅を外れた場所で分けます。</p>
+        <p class="hint">許容幅は、撮影間隔の最大値と最小値の差です。Exif の撮影日時を使用します。途中抜けを補完せず、間隔が許容幅を外れた場所で分けます。</p>
         <button id="scan-button" type="submit" disabled>このフォルダを解析</button>
       </form>
     </section>

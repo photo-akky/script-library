@@ -21,26 +21,26 @@ def birth_time(path):
 
 
 def detect_sets(photos, minimum=3, maximum=30, tolerance=1, count=5):
-    """Each gap must admit one common interval within the tolerance."""
+    """The range of observed gaps must not exceed the tolerance."""
     ordered = sorted(photos, key=lambda item: (item[1], item[0].name))
     result = []
     i = 0
     while i < len(ordered):
-        low, high = minimum, maximum
+        low, high = float('inf'), float('-inf')
         end = i + 1
         gaps = []
         while end < len(ordered):
             gap = ordered[end][1] - ordered[end - 1][1]
-            new_low = max(low, gap - tolerance)
-            new_high = min(high, gap + tolerance)
+            new_low = min(low, gap)
+            new_high = max(high, gap)
             # A missing frame (roughly twice the established interval) splits a set.
-            if gap <= 0 or new_low > new_high:
+            if not minimum <= gap <= maximum or new_high - new_low > tolerance:
                 break
             low, high = new_low, new_high
             gaps.append(gap)
             end += 1
         if end - i >= count:
-            interval = min(high, max(low, statistics.median(gaps)))
+            interval = statistics.median(gaps)
             result.append((ordered[i:end], interval))
             i = end
         else:
@@ -108,7 +108,7 @@ def main(argv=None):
     parser.add_argument('source', type=Path)
     parser.add_argument('--min-interval', type=float, default=3)
     parser.add_argument('--max-interval', type=float, default=30)
-    parser.add_argument('--tolerance', type=float, default=1)
+    parser.add_argument('--tolerance', type=float, default=1, help='間隔の最大値と最小値の差（秒）')
     parser.add_argument('--min-count', type=int, default=5)
     parser.add_argument('--raw-ext', action='append', default=[], help='追加の RAW 拡張子。複数指定可')
     parser.add_argument('--move', action='store_true')
@@ -116,8 +116,8 @@ def main(argv=None):
     parser.add_argument('--destination', type=Path)
     args = parser.parse_args(argv)
     values = (args.min_interval, args.max_interval, args.tolerance)
-    if not all(math.isfinite(v) for v in values) or not 0 < args.min_interval <= args.max_interval or args.tolerance < 0 or args.min_count < 2:
-        parser.error('間隔は正の数、許容幅は0以上、最小枚数は2以上にしてください。')
+    if not all(math.isfinite(v) for v in values) or not 0 < args.min_interval <= args.max_interval or not 0 <= args.tolerance < args.min_interval or args.min_count < 2:
+        parser.error('間隔は正の数、許容幅は0以上かつ最小間隔未満、最小枚数は2以上にしてください。')
     if args.move and (not args.sets or not args.destination):
         parser.error('--move には --sets と --destination が必要です。')
     if not args.move and (args.sets or args.destination):

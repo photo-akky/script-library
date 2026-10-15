@@ -146,8 +146,8 @@ def scan_options(data):
     count = data.get('min_count', 5)
     if isinstance(count, bool) or not isinstance(count, int) or count < 5:
         raise PreviewError('最小枚数は5以上の整数にしてください。')
-    if not 0 < minimum <= maximum or not 0 <= tolerance < minimum / 2:
-        raise PreviewError('間隔は正の数、許容幅は最小間隔の半分未満にしてください。')
+    if not 0 < minimum <= maximum or not 0 <= tolerance < minimum:
+        raise PreviewError('間隔は正の数、許容幅は最小間隔未満にしてください。')
     return minimum, maximum, tolerance, count
 
 

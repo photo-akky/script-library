@@ -124,9 +124,20 @@ class WebTests(unittest.TestCase):
         self.assertEqual(result['assumed_zone_count'], 1)
         self.assertEqual(result['sets'], [])
 
+    def test_full_gap_range_through_scan_api(self):
+        records = self.add_photos([0, 1, 2, 3, 4])
+        times = ['03:55:08', '03:55:27', '03:55:44', '03:56:03', '03:56:20']
+        for record, time in zip(records, times):
+            record['DateTimeOriginal'] = f'2026:10:10 {time}'
+        with patch.object(web, 'read_exif', return_value=records):
+            self.assertEqual(self.post_scan(tolerance=1).get_json()['sets'], [])
+            response = self.post_scan(tolerance=2)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.get_json()['sets']), 1)
+
     def test_csrf_and_invalid_options(self):
         self.assertEqual(self.client.post('/api/scan', json={}).status_code, 403)
-        for options in [{'min_count': 4}, {'min_count': 5.5}, {'min_interval': True}, {'max_interval': 0}, {'tolerance': 2}, {'tolerance': -1}]:
+        for options in [{'min_count': 4}, {'min_count': 5.5}, {'min_interval': True}, {'max_interval': 0}, {'tolerance': 3}, {'tolerance': -1}]:
             self.assertEqual(self.post_scan(**options).status_code, 400)
         self.assertEqual(self.client.post('/api/scan', json=[], headers={'X-Scan-Token': 'test-token'}).status_code, 400)
 
