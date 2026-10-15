@@ -11,6 +11,8 @@ let invalidatedMove = null;
 let copying = false;
 let copySubmitting = false;
 let pollTimer = null;
+let lastCopyJob = null;
+let dismissedCopyJobId = null;
 const token = document.querySelector('meta[name="scan-token"]').content;
 const node = (tag, text, className) => {
   const element = document.createElement(tag);
@@ -262,6 +264,7 @@ byId('scan-form').addEventListener('submit', async event => {
   status(`${selectedFolder || '写真ルート'} の Exif を読み取っています…`);
   try {
     const data = await requestJSON('/api/scan', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Scan-Token': token}, body: JSON.stringify({folder: selectedFolder, min_interval: Number(byId('min-interval').value), max_interval: Number(byId('max-interval').value), tolerance: Number(byId('tolerance').value), min_count: Number(byId('min-count').value)})});
+    resetSavePanel();
     renderResults(data);
     status('解析が完了しました。写真は変更していません。');
   } catch (error) { status(error.message, true); }
@@ -291,9 +294,27 @@ function updateCopyButtons() {
   byId('select-all').disabled = blocked || !currentScan.sets.some(group => !group.copy_error);
   byId('selection-summary').textContent = groups.length ? `${groups.length} セット・${groups.reduce((n,g)=>n+g.copy_file_count,0)} ファイル・${formatBytes(groups.reduce((n,g)=>n+g.copy_bytes,0))}` : 'セットを選択してください。';
 }
+function resetSavePanel() {
+  // An analysis must not hide an ongoing transfer or re-enable its controls.
+  if (copying || copySubmitting) return;
+  if (lastCopyJob) dismissedCopyJobId = lastCopyJob.id;
+  byId('operation').value = 'copy';
+  showCopyJob(null);
+}
 function showCopyJob(job) {
+  // Status polling may return the previous result after a new analysis.
+  if (job && job.id === dismissedCopyJobId && job.state !== 'running') return;
+  lastCopyJob = job;
   copying = Boolean(job && job.state === 'running');
   byId('copy-job').hidden = !job;
+  if (!job) {
+    byId('copy-progress').value = 0;
+    byId('copy-progress-text').textContent = '';
+    byId('copy-current').textContent = '';
+    byId('copy-error').hidden = true;
+    byId('copy-error').textContent = '';
+    byId('copy-destinations').replaceChildren();
+  }
   if (job) {
     const percent = job.bytes_total ? Math.min(100, (job.bytes_copied + (job.bytes_reused || 0)) / job.bytes_total * 100) : 0;
     byId('copy-progress').value = job.state === 'completed' ? 100 : percent;
