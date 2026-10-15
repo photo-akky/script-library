@@ -33,6 +33,30 @@ def checked_source(root, relative):
     return path
 
 
+def destination_path(root, relative):
+    relative = Path(relative)
+    if relative.is_absolute() or '..' in relative.parts or not relative.parts:
+        raise CopyError('コピー先のパスが不正です。')
+    path = root
+    for index, part in enumerate(relative.parts):
+        path = path / part
+        if path.is_symlink():
+            raise CopyError('コピー先の階層にシンボリックリンクがあります。')
+        if index < len(relative.parts) - 1 and path.exists() and not path.is_dir():
+            raise CopyError('コピー先の親階層に同名のファイルがあります。')
+    if not path.resolve().is_relative_to(root):
+        raise CopyError('コピー先ルート外には保存できません。')
+    return path
+
+
+def remove_empty_created(paths):
+    for path in reversed(paths):
+        try:
+            path.rmdir()
+        except OSError:
+            pass  # Never remove files or directories populated by another process.
+
+
 @dataclass(frozen=True)
 class CopyFile:
     source: Path
@@ -56,10 +80,11 @@ class CopyManager:
 
     def register(self, folder, groups):
         plans = {}
+        relative_folder = Path(folder).resolve().relative_to(self.source_root)
         for group in groups:
             files, targets, sources = [], set(), set()
-            stamp = datetime.fromisoformat(group['start']).strftime('%Y%m%d_%H%M%S')
-            group['target_folder'] = f'interval_{stamp}_{group["number"]:03d}'
+            target_folder = relative_folder.with_name(f'{relative_folder.name}-{group["number"]}') if relative_folder.parts else Path(f'root-{group["number"]}')
+            group['target_folder'] = target_folder.as_posix()
             try:
                 for photo in group['files']:
                     for relative in [photo['jpg'], *photo['raw']]:
@@ -107,7 +132,7 @@ class CopyManager:
             sets = tuple(plans[n] for n in sorted(selected))
             all_sources = set()
             for group in sets:
-                destination = root / group.name
+                destination = destination_path(root, group.name)
                 if destination.exists() or destination.is_symlink():
                     raise CopyError(f'コピー先が既に存在します: {group.name}。上書きはしません。')
                 for file in group.files:
@@ -124,12 +149,18 @@ class CopyManager:
             created = []
             try:
                 for group in sets:
-                    path = root / group.name
+                    path = destination_path(root, group.name)
+                    parent = root
+                    for part in Path(group.name).parent.parts:
+                        parent = parent / part
+                        if not parent.exists():
+                            parent.mkdir(exist_ok=False)
+                            created.append(parent)
+                    path = destination_path(root, group.name)
                     path.mkdir(exist_ok=False)
                     created.append(path)
-            except OSError:
-                for path in reversed(created):
-                    path.rmdir()  # Only the empty directories created by this request.
+            except (OSError, CopyError):
+                remove_empty_created(created)
                 raise
             self.job = {'id': secrets.token_urlsafe(18), 'state': 'running', 'phase': '準備',
                         'files_done': 0, 'files_total': sum(len(group.files) for group in sets),
@@ -141,8 +172,7 @@ class CopyManager:
                 worker.start()
             except Exception:
                 self.job = None
-                for path in reversed(created):
-                    path.rmdir()
+                remove_empty_created(created)
                 raise
             return job
 

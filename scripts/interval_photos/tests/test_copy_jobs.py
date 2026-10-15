@@ -67,6 +67,61 @@ class CopyTests(unittest.TestCase):
         self.assertEqual(self.before, after)
         self.assertEqual((target / 'one.JPG').stat().st_mtime_ns, self.before['shoot/one.JPG'][1])
 
+    def nested_source(self):
+        nested = self.source / '2026' / '10' / '11'
+        nested.parent.mkdir(parents=True)
+        self.folder.rename(nested)
+        self.folder = nested
+        return self.manager.register(self.folder, [self.group])
+
+    def test_nested_structure_and_raw_subfolder(self):
+        token = self.nested_source()
+        self.assertEqual(self.group['target_folder'], '2026/10/11-1')
+        self.manager.start(token, [1])
+        job = self.wait_job()
+        self.assertEqual(job['state'], 'completed', job)
+        self.assertEqual(job['destinations'], ['2026/10/11-1'])
+        target = self.destination / '2026/10/11-1'
+        self.assertEqual((target/'one.JPG').read_bytes(), b'jpeg original')
+        self.assertEqual((target/'RAW/one.NEF').read_bytes(), b'raw original')
+        self.assertTrue((self.folder/'one.JPG').exists())
+
+    def test_root_selection_uses_root_suffix(self):
+        (self.source/'root.JPG').write_bytes(b'root photo')
+        group = {'number':2,'files':[{'jpg':'root.JPG','raw':[]}]}
+        token = self.manager.register(self.source,[group])
+        self.assertEqual(group['target_folder'],'root-2')
+        self.manager.start(token,[2])
+        self.assertEqual(self.wait_job()['state'],'completed')
+        self.assertTrue((self.destination/'root-2/root.JPG').is_file())
+
+    def test_nested_parent_symlink_is_rejected(self):
+        token = self.nested_source()
+        outside = self.root/'outside'; outside.mkdir()
+        (self.destination/'2026').symlink_to(outside,target_is_directory=True)
+        with self.assertRaisesRegex(CopyError,'シンボリックリンク'):
+            self.manager.start(token,[1])
+        self.assertEqual(list(outside.iterdir()),[])
+
+    def test_nested_parent_file_is_rejected(self):
+        token = self.nested_source()
+        (self.destination/'2026').write_bytes(b'keep')
+        with self.assertRaisesRegex(CopyError,'親階層'):
+            self.manager.start(token,[1])
+        self.assertEqual((self.destination/'2026').read_bytes(),b'keep')
+
+    def test_parent_creation_failure_cleans_only_created_empty_folders(self):
+        token = self.nested_source()
+        parent = self.destination/'2026'; parent.mkdir()
+        original = Path.mkdir
+        def mkdir(path,*args,**kwargs):
+            if path.name=='11-1': raise PermissionError('test denial')
+            return original(path,*args,**kwargs)
+        with patch.object(Path,'mkdir',mkdir):
+            with self.assertRaises(PermissionError): self.manager.start(token,[1])
+        self.assertTrue(parent.is_dir())
+        self.assertEqual(list(parent.iterdir()),[])
+
     def test_existing_destination_is_never_overwritten(self):
         target = self.destination / self.group['target_folder']; target.mkdir()
         (target / 'one.JPG').write_bytes(b'existing')
