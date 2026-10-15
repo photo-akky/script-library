@@ -11,12 +11,19 @@ services:
       - "${NAS_BIND_IP:-127.0.0.1}:8088:8080"
     environment:
       PHOTO_ROOT: /photos
+      COPY_ROOT: /copies
       PHOTO_TIMEZONE: Asia/Tokyo
     volumes:
       - type: bind
         source: "${PHOTO_SOURCE:?Set PHOTO_SOURCE in .env to the NAS photo directory}"
         target: /photos
         read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: "${PHOTO_DESTINATION:?Set PHOTO_DESTINATION in .env to the copy destination directory}"
+        target: /copies
+        read_only: false
         bind:
           create_host_path: false
     read_only: true

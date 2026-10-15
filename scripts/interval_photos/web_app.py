@@ -1,4 +1,4 @@
-"""Read-only NAS preview. Never changes source photos; serves only generated JPEG previews."""
+"""NAS photo classification and verified copying; source photos remain unchanged."""
 import hmac
 import json
 import math
@@ -14,6 +14,7 @@ from flask import Flask, Response, jsonify, render_template, request, url_for
 from itsdangerous import BadSignature, URLSafeSerializer
 from image_preview import ImageCache, ImagePreviewError, file_version, resolve_image
 from interval_photos import RAW_EXTENSIONS, detect_sets
+from copy_jobs import CopyError, CopyManager
 
 
 class PreviewError(Exception):
@@ -154,6 +155,7 @@ def create_app(config=None):
     app = Flask(__name__)
     app.config.update(PHOTO_ROOT=os.environ.get('PHOTO_ROOT', '/photos'),
                       PHOTO_TIMEZONE=os.environ.get('PHOTO_TIMEZONE', 'Asia/Tokyo'),
+                      COPY_ROOT=os.environ.get('COPY_ROOT'),
                       EXIFTOOL=os.environ.get('EXIFTOOL', 'exiftool'),
                       PREVIEW_CACHE=os.environ.get('PREVIEW_CACHE', '/tmp/interval-preview-cache'),
                       MAX_CONTENT_LENGTH=16 * 1024,
@@ -162,6 +164,8 @@ def create_app(config=None):
         app.config.update(config)
     root = Path(app.config['PHOTO_ROOT']).resolve()
     zone = ZoneInfo(app.config['PHOTO_TIMEZONE'])
+    copy_manager = CopyManager(root, app.config['COPY_ROOT'])
+    app.extensions['copy_manager'] = copy_manager
     scan_lock = threading.Lock()
     image_cache = ImageCache(app.config['PREVIEW_CACHE'])
     image_signer = URLSafeSerializer(app.config['SCAN_TOKEN'], salt='photo-preview')
@@ -175,6 +179,10 @@ def create_app(config=None):
 
     @app.errorhandler(PreviewError)
     def bad_preview(error):
+        return jsonify(error=str(error)), 400
+
+    @app.errorhandler(CopyError)
+    def bad_copy(error):
         return jsonify(error=str(error)), 400
 
     @app.errorhandler(ImagePreviewError)
@@ -212,6 +220,20 @@ def create_app(config=None):
         data = image_cache.get(path, request.args.get('size', 'thumb'), payload['version'])
         return Response(data, mimetype='image/jpeg')
 
+    @app.get('/api/copy/status')
+    def copy_status():
+        return jsonify(copy_enabled=copy_manager.destination_root is not None, job=copy_manager.status())
+
+    @app.post('/api/copy')
+    def start_copy():
+        if not hmac.compare_digest(request.headers.get('X-Scan-Token', '').encode('utf-8'), app.config['SCAN_TOKEN'].encode('utf-8')):
+            return jsonify(error='ページを再読み込みしてください。'), 403
+        data = request.get_json(silent=True)
+        if not isinstance(data, dict):
+            raise CopyError('コピー条件の指定が不正です。')
+        job = copy_manager.start(data.get('scan_id'), data.get('sets'))
+        return jsonify(job=job), 202
+
     @app.post('/api/scan')
     def scan():
         if not hmac.compare_digest(request.headers.get('X-Scan-Token', '').encode('utf-8'), app.config['SCAN_TOKEN'].encode('utf-8')):
@@ -230,6 +252,7 @@ def create_app(config=None):
                     token = image_signer.dumps({'path': path.relative_to(root).as_posix(), 'version': file_version(path)})
                     file['thumbnail_url'] = url_for('preview_image', token=token, size='thumb')
                     file['preview_url'] = url_for('preview_image', token=token, size='preview')
+            result['scan_id'] = copy_manager.register(folder, result['sets'])
             return jsonify(result)
         finally:
             scan_lock.release()

@@ -56,7 +56,7 @@ class WebTests(unittest.TestCase):
     def test_home_and_folder_navigation(self):
         response = self.client.get('/')
         self.assertEqual(response.status_code, 200)
-        self.assertIn('候補確認のみ'.encode(), response.data)
+        self.assertIn('元写真は保持します'.encode(), response.data)
         self.assertIn("frame-ancestors 'none'", response.headers['Content-Security-Policy'])
         root = self.client.get('/api/folders').get_json()
         self.assertIsNone(root['parent'])

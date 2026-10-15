@@ -61,3 +61,8 @@ footer { margin-top: 28px; }
 .preview-navigation { display: flex; justify-content: center; align-items: center; gap: 16px; margin-top: 18px; }
 @media (max-width: 800px) { .photo-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 480px) { .photo-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } .preview-navigation { gap: 8px; } .preview-navigation button { padding: 10px; font-size: 13px; } }
+.set-selection { display: flex; align-items: center; gap: 12px; font-size: 19px; margin-bottom: 12px; }
+.set-selection input { width: 20px; height: 20px; margin: 0; flex-shrink: 0; accent-color: #2d6244; }
+.copy-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+#copy-progress { width: 100%; accent-color: #2d6244; height: 20px; }
+#copy-destinations { font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }

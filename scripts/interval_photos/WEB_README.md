@@ -1,6 +1,6 @@
-# NAS で動く候補確認 Web GUI
+# NAS で動く写真分類・コピー Web GUI
 
-Docker 内で JPG の Exif を読み取り、インターバル撮影候補をブラウザに表示します。セットの先頭・中央・末尾と直前・直後のサムネイルを表示し、クリックで拡大できます。写真のコピー・移動・削除機能はありません。写真ルートは読み取り専用です。Mac の作成日時と NAS の作成日時が異なることを確認したため、NAS 版では Exif の `DateTimeOriginal` を使用します。
+Docker 内で JPG の Exif を読み取り、インターバル撮影候補をブラウザに表示します。セットの先頭・中央・末尾と直前・直後のサムネイルを表示し、クリックで拡大できます。選択したセットの JPG / RAW を NAS 内でコピーし、SHA-256 で内容を照合します。元写真は保持し、写真ルートは読み取り専用です。Mac の作成日時と NAS の作成日時が異なることを確認したため、NAS 版では Exif の `DateTimeOriginal` を使用します。
 
 ## UGREEN DXP4800 Plus への配置
 
@@ -13,6 +13,8 @@ cp .env.example .env
 `.env` の `PHOTO_SOURCE` を NAS 上の写真ルートの絶対パスに変更してください。実在のパスは Git 管理対象外の `.env` にだけ保存します。未設定なら Compose は起動せず、存在しないフォルダも自動作成しません。コンテナ内の参照先 `/photos` は共通です。
 
 NAS の SSH で `id -u` と `id -g` を実行し、その数値を `.env` の `APP_UID` と `APP_GID` に設定してください。両方とも必須です。Docker イメージの既定ユーザーと実行時のユーザーに反映され、更新スクリプトも同じユーザーを使います。
+
+`.env` の `PHOTO_DESTINATION` に、既存のコピー先ルートの絶対パスを設定してください。`APP_UID` / `APP_GID` のユーザーがそのフォルダに書き込める必要があります。写真ルートは読み取り専用、コピー先だけを書き込み可能でマウントします。
 
 `.env` の `NAS_BIND_IP` を NAS の LAN IP に変更してください。そのアドレスのポート8088で待ち受けます。認証機能はまだないため、家庭内の信頼できる LAN で候補確認に使い、インターネットには公開しないでください。既定の `127.0.0.1` のままなら SSH 転送で使えます。
 
@@ -37,7 +39,17 @@ ssh -N -L 8088:127.0.0.1:8088 nas-user@NASのLAN-IP
 - 画像キャッシュはコンテナの `/tmp` 内、上限32MiB・256件。再起動で消えます。画像生成は1件ずつ行い、元写真の変更を検知した場合は再解析を求めます。
 - シンボリックリンクをたどるフォルダ一覧と写真は対象外です。写真ルート外のパスは拒否します。
 - 解析は1件ずつ、Exif 読み取りの制限時間は180秒です。タイムアウト時は小さいフォルダで試してください。
-- NAS の移動先フォルダはまだマウントしません。既存写真の削除権限も、この段階では必要ありません。
+- コピー先だけを書き込み可能でマウントします。既存写真の削除権限は不要です。
+
+## セットをコピー
+
+解析後、コピーするセットにチェックし、「選択したセットをコピー」を押します。確認画面のフォルダ一覧を確認すると処理が始まります。初期状態で選択されるセットはありません。直前・直後の比較写真はコピーしません。
+
+保存先は `PHOTO_DESTINATION` 直下の `interval_YYYYMMDD_HHMMSS_NNN` です。JPG と同名 RAW をコピーし、RAW サブフォルダの構成を保持します。同名の保存先フォルダがあれば開始前に停止し、上書きしません。解析後に元ファイルが変わっていても再解析を求めます。解析結果は最大8件・1時間まで保持します。
+
+処理は NAS 内で実行し、ブラウザを閉じても継続します。再度開くと現在の処理状況を取得できます。転送済み容量と、内容検証まで完了したファイル数を分けて表示します。コピー後に保存先を読み直して SHA-256 を照合するため、単純コピーより読み取りが1回増えます。ファイルの更新日時を引き継ぎます。
+
+各セットに `copy-log.jsonl` を保存します。コピーが終わっていないセットには `COPY_INCOMPLETE`、未完了ファイルには `.part` が残ります。失敗時は自動再試行・上書きをせず、保存先とログを確認してください。元写真は常に保持します。コンテナを再起動すると進捗情報はリセットされるため、処理中の更新・再起動は避けてください。保存先ファイルの確定には同一ファイルシステム内のハードリンクを使います。
 
 停止と再起動:
 
@@ -50,6 +62,7 @@ sudo docker compose up -d
 
 ```sh
 export PHOTO_SOURCE=/path/to/photos
+export PHOTO_DESTINATION=/path/to/timelapses
 export APP_UID="$(id -u)" APP_GID="$(id -g)"
 sudo docker build --build-arg APP_UID="$APP_UID" --build-arg APP_GID="$APP_GID" -t interval-photos-preview:local .
 sudo docker run -d --name interval-preview \
@@ -57,13 +70,31 @@ sudo docker run -d --name interval-preview \
   --security-opt no-new-privileges:true \
   --tmpfs /tmp:rw,size=64m,mode=1777 \
   --mount "type=bind,src=${PHOTO_SOURCE:?Set PHOTO_SOURCE},dst=/photos,readonly" \
+  --mount "type=bind,src=${PHOTO_DESTINATION:?Set PHOTO_DESTINATION},dst=/copies" \
+  -e COPY_ROOT=/copies \
   -p 127.0.0.1:8088:8080 \
   --restart unless-stopped interval-photos-preview:local
 ```
 
-この例の `/path/to/photos` は実際の写真ルートに置き換えてください。`docker run` は `.env` を自動で読みません。この場合も上記の SSH 転送で操作できます。既存の同名コンテナは自動で削除しません。
+この例の `/path/to/photos` と `/path/to/timelapses` は実際の写真ルート・コピー先に置き換えてください。`docker run` は `.env` を自動で読みません。この場合も上記の SSH 転送で操作できます。既存の同名コンテナは自動で削除しません。
 
-## NAS 上の既存インストールを更新
+## Git で clone 済みの NAS を更新
+
+アプリのフォルダで実行します。
+
+```sh
+git pull --ff-only
+```
+
+コピー機能の初回導入時は `.env` に `PHOTO_DESTINATION` を追加し、既存の書き込み可能な保存先ルートを指定してください。その後に再ビルドします。
+
+```sh
+sudo docker compose up -d --build
+```
+
+`.env` は Git 管理対象外なので設定は保持されます。Compose にローカル変更がある場合、`git pull` が止まることがあります。ローカル変更を確認してから更新し、上書きで消さないでください。
+
+## アーカイブで配置した NAS を更新
 
 起動中のサービスを停止せず、まずコードを更新します。既存の `compose.yaml` と `.env` は保持するため、UGOS 用に設定したアクセス方法を維持できます。
 
@@ -90,6 +121,17 @@ sudo docker compose up -d --build
 ```
 
 再ビルド完了後、ブラウザを再読み込みしてもう一度解析してください。公開リポジトリから取得する手順です。非公開に変更した場合は認証を使う取得方法が別途必要です。
+
+アーカイブ配置用の更新スクリプトは既存の `compose.yaml` を保持します。コピー機能を有効にする場合は `.env` に `PHOTO_DESTINATION` を設定し、Compose の `environment` に `COPY_ROOT: /copies`、`volumes` に次のマウントを追加してください。
+
+```yaml
+- type: bind
+  source: "${PHOTO_DESTINATION:?Set PHOTO_DESTINATION in .env to the copy destination directory}"
+  target: /copies
+  read_only: false
+  bind:
+    create_host_path: false
+```
 
 ## 以前の固定パス設定から移行する場合
 

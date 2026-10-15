@@ -4,6 +4,11 @@ let selectedFolder = null;
 let parentFolder = null;
 let scanning = false;
 let loadingFolder = false;
+let currentScan = null;
+let copyEnabled = false;
+let copying = false;
+let copySubmitting = false;
+let pollTimer = null;
 const token = document.querySelector('meta[name="scan-token"]').content;
 const node = (tag, text, className) => {
   const element = document.createElement(tag);
@@ -25,6 +30,7 @@ async function requestJSON(url, options) {
 }
 function updateButton() {
   byId('scan-button').disabled = selectedFolder === null || scanning || loadingFolder;
+  updateCopyButtons();
 }
 async function openFolder(path) {
   if (loadingFolder || scanning) return;
@@ -32,6 +38,8 @@ async function openFolder(path) {
   selectedFolder = null;
   updateButton();
   byId('results').hidden = true;
+  currentScan = null;
+  updateCopyButtons();
   status('フォルダを読み込んでいます…');
   try {
     const data = await requestJSON('/api/folders?path=' + encodeURIComponent(path));
@@ -138,6 +146,7 @@ byId('preview-dialog').addEventListener('keydown', event => {
 });
 
 function renderResults(data) {
+  currentScan = data;
   if (imageObserver) imageObserver.disconnect();
   closePreview();
   byId('results').hidden = false;
@@ -163,7 +172,18 @@ function renderResults(data) {
   if (!data.sets.length) sets.append(node('p', '条件に一致するセットはありません。フォルダや分類条件を確認してください。', 'panel'));
   for (const group of data.sets) {
     const card = node('article', undefined, 'panel set-card');
-    card.append(node('h3', `セット ${group.number} · ${group.count} 枚`));
+    const selectLabel = node('label', undefined, 'set-selection');
+    const checkbox = node('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'set-checkbox';
+    checkbox.value = String(group.number);
+    checkbox.dataset.copyable = String(!group.copy_error);
+    checkbox.disabled = !copyEnabled || copying || Boolean(group.copy_error);
+    checkbox.addEventListener('change', updateCopyButtons);
+    selectLabel.append(checkbox, node('span', `セット ${group.number} · ${group.count} 枚`));
+    card.append(selectLabel);
+    if (group.copy_error) card.append(node('p', group.copy_error, 'notice'));
+    else card.append(node('p', `コピー先：${group.target_folder} / ${group.copy_file_count} ファイル・${formatBytes(group.copy_bytes)}`, 'hint'));
     card.append(node('p', `${group.start.replace('T', ' ')} ～ ${group.end.replace('T', ' ')}`, 'set-time'));
     card.append(node('p', `約 ${group.interval.toFixed(2)} 秒間隔（${group.gap_min.toFixed(2)} ～ ${group.gap_max.toFixed(2)} 秒） · RAW あり ${group.paired_count} / ${group.count} 枚`));
     const timelineFiles = [group.before, ...group.files, group.after].filter(Boolean);
@@ -216,6 +236,7 @@ function renderResults(data) {
     card.append(details);
     sets.append(card);
   }
+  updateCopyButtons();
 }
 byId('folder-form').addEventListener('submit', event => { event.preventDefault(); openFolder(byId('folder-path').value); });
 byId('parent-folder').addEventListener('click', () => { if (parentFolder !== null) openFolder(parentFolder); });
@@ -225,6 +246,8 @@ byId('scan-form').addEventListener('submit', async event => {
   scanning = true;
   updateButton();
   byId('results').hidden = true;
+  currentScan = null;
+  updateCopyButtons();
   byId('scan-button').textContent = '解析中…';
   status(`${selectedFolder || '写真ルート'} の Exif を読み取っています…`);
   try {
@@ -234,4 +257,74 @@ byId('scan-form').addEventListener('submit', async event => {
   } catch (error) { status(error.message, true); }
   finally { scanning = false; byId('scan-button').textContent = 'このフォルダを解析'; updateButton(); }
 });
+function formatBytes(bytes) {
+  if (!Number.isFinite(bytes)) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MiB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GiB`;
+}
+function selectedGroups() {
+  if (!currentScan) return [];
+  const checked = new Set([...document.querySelectorAll('.set-checkbox:checked')].map(box => Number(box.value)));
+  return currentScan.sets.filter(group => checked.has(group.number) && !group.copy_error);
+}
+function updateCopyButtons() {
+  const blocked = !copyEnabled || copying || copySubmitting || scanning || loadingFolder || !currentScan;
+  for (const box of document.querySelectorAll('.set-checkbox')) box.disabled = blocked || box.dataset.copyable !== 'true';
+  const groups = selectedGroups();
+  byId('start-copy').disabled = blocked || !groups.length;
+  byId('select-all').disabled = blocked || !currentScan.sets.some(group => !group.copy_error);
+  byId('selection-summary').textContent = groups.length ? `${groups.length} セット・${groups.reduce((n,g)=>n+g.copy_file_count,0)} ファイル・${formatBytes(groups.reduce((n,g)=>n+g.copy_bytes,0))}` : 'セットを選択してください。';
+}
+function showCopyJob(job) {
+  copying = Boolean(job && job.state === 'running');
+  byId('copy-job').hidden = !job;
+  if (job) {
+    const percent = job.bytes_total ? Math.min(100, job.bytes_copied / job.bytes_total * 100) : 0;
+    byId('copy-progress').value = job.state === 'completed' ? 100 : percent;
+    byId('copy-progress-text').textContent = `${job.phase} · 内容検証済み ${job.files_done} / ${job.files_total} ファイル · 転送済み ${formatBytes(job.bytes_copied)} / ${formatBytes(job.bytes_total)}`;
+    byId('copy-current').textContent = job.state === 'completed' ? 'コピーと内容検証が完了しました。元ファイルは保持しています。' : job.current_file;
+    byId('copy-error').hidden = !job.error;
+    byId('copy-error').textContent = job.error ? `${job.error} 元ファイルは保持しています。コピー先の COPY_INCOMPLETE と copy-log.jsonl を確認してください。` : '';
+    byId('copy-destinations').replaceChildren(...job.destinations.map(name=>node('li', name)));
+  }
+  updateCopyButtons();
+}
+async function pollCopy() {
+  clearTimeout(pollTimer);
+  try {
+    const data = await requestJSON('/api/copy/status');
+    copyEnabled = data.copy_enabled;
+    byId('copy-config').textContent = copyEnabled ? 'コピー先は NAS の PHOTO_DESTINATION で設定したルートです。既存フォルダは上書きしません。' : 'コピー先が未設定です。NAS の PHOTO_DESTINATION と保存先マウントを設定してください。';
+    showCopyJob(data.job);
+    if (copying) pollTimer = setTimeout(pollCopy, 1000);
+  } catch (error) {
+    byId('copy-config').textContent = `コピー状態を取得できません：${error.message}。処理は NAS 側で継続している場合があります。`;
+    pollTimer = setTimeout(pollCopy, 3000);
+  }
+}
+byId('select-all').addEventListener('click', () => {
+  const boxes = [...document.querySelectorAll('.set-checkbox:not(:disabled)')];
+  const select = !boxes.every(box=>box.checked);
+  boxes.forEach(box=>{box.checked=select;});
+  updateCopyButtons();
+});
+byId('start-copy').addEventListener('click', async () => {
+  const groups = selectedGroups();
+  if (!groups.length || copying || copySubmitting || !currentScan) return;
+  const summary = groups.map(group=>`${group.target_folder}（${group.copy_file_count} ファイル）`).join('\n');
+  if (!window.confirm(`次のセットをコピーします。元ファイルは保持します。\n\n${summary}`)) return;
+  copySubmitting = true;
+  updateCopyButtons();
+  try {
+    const data = await requestJSON('/api/copy', {method:'POST', headers:{'Content-Type':'application/json','X-Scan-Token':token}, body:JSON.stringify({scan_id:currentScan.scan_id,sets:groups.map(group=>group.number)})});
+    showCopyJob(data.job);
+    pollCopy();
+  } catch (error) {
+    status(error.message, true);
+    pollCopy();
+  } finally {copySubmitting = false; updateCopyButtons();}
+});
+pollCopy();
 openFolder('');

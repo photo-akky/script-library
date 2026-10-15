@@ -6,7 +6,7 @@ RUN sed -i 's|http://deb.debian.org|https://deb.debian.org|g' /etc/apt/sources.l
 WORKDIR /app
 COPY requirements.lock ./requirements.lock
 RUN PIP_CERT=/etc/ssl/certs/ca-certificates.crt pip install --no-cache-dir -r requirements.lock
-COPY interval_photos.py web_app.py image_preview.py ./
+COPY interval_photos.py web_app.py image_preview.py copy_jobs.py ./
 COPY templates ./templates
 COPY static ./static
 RUN chmod -R a+rX /app

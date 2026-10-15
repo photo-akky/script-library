@@ -20,12 +20,12 @@ sudo docker run --rm --user "$updater_user" \
     wget -O /tmp/source.tar.gz https://codeload.github.com/photo-akky/script-library/tar.gz/refs/heads/nas-interval-preview
     tar -xzf /tmp/source.tar.gz -C /tmp
     source_dir=/tmp/script-library-nas-interval-preview/scripts/interval_photos
-    for file in Dockerfile requirements.txt requirements.lock interval_photos.py web_app.py image_preview.py README.md WEB_README.md .dockerignore update-nas.sh; do
+    for file in Dockerfile requirements.txt requirements.lock interval_photos.py web_app.py image_preview.py copy_jobs.py README.md WEB_README.md .dockerignore update-nas.sh; do
       test -f "$source_dir/$file"
     done
     test -d "$source_dir/templates"
     test -d "$source_dir/static"
-    for file in Dockerfile requirements.txt requirements.lock interval_photos.py web_app.py image_preview.py README.md WEB_README.md .dockerignore update-nas.sh; do
+    for file in Dockerfile requirements.txt requirements.lock interval_photos.py web_app.py image_preview.py copy_jobs.py README.md WEB_README.md .dockerignore update-nas.sh; do
       cp "$source_dir/$file" "/app/$file"
     done
     cp -R "$source_dir/templates" "$source_dir/static" /app/
