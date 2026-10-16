@@ -82,6 +82,96 @@ class MoveTests(unittest.TestCase):
         self.assertEqual((self.target/'notes.txt').read_bytes(),b'keep extra file')
         self.assert_targets()
 
+    def shift_copy(self, number=7):
+        self.make_copy()
+        shifted = self.target.with_name(f'11-{number}')
+        self.target.rename(shifted)
+        return shifted
+
+    def test_renumbered_copy_is_reused_with_bounded_search(self):
+        shifted = self.shift_copy()
+        # A matching-looking directory elsewhere must never be scanned.
+        unrelated = self.destination / 'elsewhere'
+        unrelated.mkdir()
+        visited = []
+        original = Path.iterdir
+        def listing(path):
+            visited.append(path)
+            if path != shifted.parent:
+                raise AssertionError(f'Unexpected directory scan: {path}')
+            return original(path)
+        with patch.object(Path, 'iterdir', listing), patch.object(self.manager, '_copy_file', side_effect=AssertionError('recopy')):
+            job = self.run_move()
+        self.assertEqual(job['state'], 'completed', job)
+        self.assertEqual(job['destinations'], ['2026/10/11-7'])
+        self.assertEqual(job['bytes_copied'], 0)
+        self.assertEqual(job['sources_removed'], 2)
+        self.assertEqual(visited, [shifted.parent])
+        self.assertFalse(self.target.exists())
+        for name, data in self.contents.items():
+            self.assertEqual((shifted / name).read_bytes(), data)
+
+    def test_shifted_copy_is_found_despite_unrelated_number_collision(self):
+        shifted = self.shift_copy()
+        self.target.mkdir()
+        (self.target / 'other.JPG').write_bytes(b'unrelated set')
+        job = self.run_move()
+        self.assertEqual(job['state'], 'completed', job)
+        self.assertEqual(job['destinations'], ['2026/10/11-7'])
+        self.assertEqual((self.target / 'other.JPG').read_bytes(), b'unrelated set')
+        self.assertTrue((shifted / 'one.JPG').exists())
+
+    def test_multiple_matching_copies_are_rejected_without_writes(self):
+        import shutil
+        shifted = self.shift_copy()
+        shutil.copytree(shifted, self.target)
+        with self.assertRaisesRegex(CopyError, '複数'):
+            self.manager.start(self.scan, [1], 'move')
+        self.assert_originals()
+        self.assertFalse((shifted / 'MOVE_INCOMPLETE').exists())
+        self.assertFalse((self.target / 'MOVE_INCOMPLETE').exists())
+
+    def test_reused_shifted_copy_and_new_set_share_deletion_gate(self):
+        shifted = self.shift_copy()
+        (self.folder / 'two.JPG').write_bytes(b'new set')
+        second = {'number': 2, 'files': [{'jpg': 'two.JPG', 'raw': []}]}
+        token = self.manager.register(self.folder, [self.group, second])
+        with patch.object(self.manager, '_copy_file', side_effect=OSError('new set failed')):
+            self.manager.start(token, [1, 2], 'move')
+            job = self.wait()
+        self.assertEqual(job['state'], 'failed')
+        self.assertEqual(job['sources_removed'], 0)
+        self.assertEqual(job['destinations'], ['2026/10/11-7', '2026/10/11-2'])
+        self.assert_originals()
+        self.assertTrue((self.folder / 'two.JPG').exists())
+        self.assertTrue((shifted / 'MOVE_INCOMPLETE').exists())
+
+    def test_shifted_copy_mismatch_keeps_all_sources(self):
+        shifted = self.shift_copy()
+        (shifted / 'one.JPG').write_bytes(b'different data')
+        job = self.run_move()
+        self.assertEqual(job['state'], 'failed')
+        self.assertEqual(job['sources_removed'], 0)
+        self.assert_originals()
+        self.assertFalse(self.target.exists())
+
+    def test_shifted_incomplete_copy_is_rejected(self):
+        shifted = self.shift_copy()
+        (shifted / 'COPY_INCOMPLETE').write_text('unfinished')
+        with self.assertRaisesRegex(CopyError, '記録'):
+            self.manager.start(self.scan, [1], 'move')
+        self.assert_originals()
+
+    def test_other_source_folder_and_symlink_are_not_candidates(self):
+        shifted = self.shift_copy()
+        shifted.rename(shifted.with_name('different-7'))
+        shifted.symlink_to(shifted.with_name('different-7'), target_is_directory=True)
+        job = self.run_move()
+        self.assertEqual(job['state'], 'completed', job)
+        self.assertEqual(job['destinations'], ['2026/10/11-1'])
+        self.assertGreater(job['bytes_copied'], 0)
+        self.assert_targets()
+
     def test_existing_copy_mismatch_never_deletes_any_source(self):
         self.make_copy()
         (self.target/'RAW/one.NEF').write_bytes(b'wrong contents')

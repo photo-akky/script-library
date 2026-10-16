@@ -337,7 +337,7 @@ async function pollCopy() {
     const data = await requestJSON('/api/copy/status');
     copyEnabled = data.copy_enabled;
     moveEnabled = Boolean(data.move_enabled);
-    byId('copy-config').textContent = copyEnabled ? '保存先は PHOTO_DESTINATION で設定したルートです。移動時は既存コピーも全件照合し、一致した場合だけ元ファイルを削除します。' : 'コピー先が未設定です。NAS の PHOTO_DESTINATION と保存先マウントを設定してください。';
+    byId('copy-config').textContent = copyEnabled ? '保存先は PHOTO_DESTINATION で設定したルートです。移動時は予定先の親フォルダ内で既存コピーを探し、全件照合後に元ファイルを削除します。実際の保存先は処理状況に表示します。' : 'コピー先が未設定です。NAS の PHOTO_DESTINATION と保存先マウントを設定してください。';
     showCopyJob(data.job);
     if (copying) pollTimer = setTimeout(pollCopy, 1000);
   } catch (error) {

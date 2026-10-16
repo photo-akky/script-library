@@ -113,6 +113,29 @@ class CopyManager:
         with self.lock:
             return dict(self.job) if self.job else None
 
+    def _find_existing_copy(self, group):
+        """Inspect only sibling set folders, never walk the destination tree."""
+        root = self.destination_root
+        planned = destination_path(root, group.name)
+        parent = planned.parent
+        if not parent.is_dir():
+            return group
+        prefix = planned.name.rsplit('-', 1)[0] + '-'
+        candidates = []
+        for folder in sorted(parent.iterdir()):
+            suffix = folder.name.removeprefix(prefix)
+            if (not folder.name.startswith(prefix) or not suffix.isascii()
+                    or not suffix.isdigit() or folder.is_symlink() or not folder.is_dir()):
+                continue
+            name = folder.relative_to(root).as_posix()
+            # Probe only the selected JPG/RAW paths; unrelated subtrees are untouched.
+            if all(destination_path(root, Path(name) / file.target).is_file()
+                   for file in group.files):
+                candidates.append(name)
+        if len(candidates) > 1:
+            raise CopyError('同じファイル構成の保存先が複数あります。親フォルダ内の既存コピーを確認してください。')
+        return CopySet(candidates[0], group.files) if candidates else group
+
     def start(self, scan_id, selected, operation="copy"):
         if operation not in ('copy', 'move'):
             raise CopyError('処理方法が不正です。')
@@ -135,6 +158,10 @@ class CopyManager:
             if root.samefile(self.source_root):
                 raise CopyError('コピー先ルートは写真ルートと別のフォルダにしてください。')
             sets = tuple(plans[n] for n in sorted(selected))
+            if operation == 'move':
+                sets = tuple(self._find_existing_copy(group) for group in sets)
+            if len({group.name for group in sets}) != len(sets):
+                raise CopyError('複数のセットが同じ保存先を参照しています。既存コピーを確認してください。')
             all_sources = set()
             existing = set()
             for group in sets:
