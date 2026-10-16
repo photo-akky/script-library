@@ -27,6 +27,23 @@ class Tests(unittest.TestCase):
     def test_drift_does_not_chain(self):
         self.assertEqual(app.detect_sets(self.photos([100, 105, 111, 118, 126])), [])
 
+    def test_tolerance_is_full_gap_range(self):
+        photos = self.photos([0, 19, 36, 55, 72])
+        self.assertEqual(app.detect_sets(photos, tolerance=1), [])
+        groups = app.detect_sets(photos, tolerance=2)
+        self.assertEqual(len(groups), 1)
+        self.assertEqual(len(groups[0][0]), 5)
+        self.assertEqual(groups[0][1], 18)
+
+    def test_gap_range_does_not_chain(self):
+        self.assertEqual(app.detect_sets(self.photos([0, 17, 35, 54, 72])), [])
+
+    def test_zero_tolerance_and_interval_bounds(self):
+        self.assertEqual(len(app.detect_sets(self.photos([0, 3, 6, 9, 12]), tolerance=0)), 1)
+        self.assertEqual(app.detect_sets(self.photos([0, 3, 7, 10, 14]), tolerance=0), [])
+        for gap in (2, 31):
+            self.assertEqual(app.detect_sets(self.photos([gap * i for i in range(5)])), [])
+
     def test_missing_birthtime(self):
         with patch.object(Path, 'stat', return_value=object()):
             with self.assertRaisesRegex(ValueError, '作成日時'):
