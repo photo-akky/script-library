@@ -81,15 +81,17 @@ class CopyManager:
 
     def register(self, folder, groups):
         plans = {}
-        relative_folder = Path(folder).resolve().relative_to(self.source_root)
         for group in groups:
+            group_folder = self.source_root / group['folder'] if 'folder' in group else Path(folder)
+            relative_folder = group_folder.resolve().relative_to(self.source_root)
+            folder_number = group.get('folder_number', group['number'])
             files, targets, sources = [], set(), set()
-            target_folder = relative_folder.with_name(f'{relative_folder.name}-{group["number"]}') if relative_folder.parts else Path(f'root-{group["number"]}')
+            target_folder = relative_folder.with_name(f'{relative_folder.name}-{folder_number}') if relative_folder.parts else Path(f'root-{folder_number}')
             group['target_folder'] = target_folder.as_posix()
             try:
                 for photo in group['files']:
                     for relative in [photo['jpg'], *photo['raw']]:
-                        path = checked_source(self.source_root, (folder / relative).relative_to(self.source_root))
+                        path = checked_source(self.source_root, (group_folder / relative).relative_to(self.source_root))
                         target = Path(relative)
                         folded = target.as_posix().casefold()
                         if folded in targets or path in sources:

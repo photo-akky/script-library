@@ -28,7 +28,8 @@
           <label>最小枚数<input id="min-count" type="number" min="5" step="1" value="5" required></label>
         </div>
         <p class="hint">許容幅は、撮影間隔の最大値と最小値の差です。Exif の撮影日時を使用します。途中抜けを補完せず、間隔が許容幅を外れた場所で分けます。</p>
-        <button id="scan-button" type="submit" disabled>このフォルダを解析</button>
+        <div class="copy-actions"><button id="scan-button" type="submit" disabled>このフォルダを解析</button><button id="scan-recursive-button" type="submit" class="secondary" disabled>子フォルダを含めて解析</button></div>
+        <p class="hint">子フォルダを含める場合も、セットの検出と前後の写真の比較はフォルダごとに行います。隠しフォルダとシンボリックリンクは対象外です。</p>
       </form>
     </section>
     <div id="status" role="status" aria-live="polite"></div>

@@ -141,6 +141,34 @@ def scan_folder(folder, zone, executable, minimum, maximum, tolerance, count):
             'assumed_zone_count': assumed_zone, 'timezone': str(zone), 'sets': groups}
 
 
+def scan_folders(root, folder, recursive, zone, executable, options):
+    result = {'jpg_count': 0, 'dated_count': 0, 'excluded': [],
+              'assumed_zone_count': 0, 'timezone': str(zone), 'sets': [],
+              'folder_count': 0, 'recursive': recursive}
+    pending = [folder]
+    while pending:
+        current = pending.pop()
+        # Recheck confinement before reading each discovered directory.
+        current = resolve_folder(root, current.relative_to(root).as_posix())
+        scanned = scan_folder(current, zone, executable, *options)
+        result['folder_count'] += 1
+        for key in ('jpg_count', 'dated_count', 'assumed_zone_count'):
+            result[key] += scanned[key]
+        result['excluded'].extend((current / name).relative_to(folder).as_posix()
+                                  if recursive else name for name in scanned['excluded'])
+        for group in scanned['sets']:
+            group['folder'] = current.relative_to(root).as_posix()
+            group['folder_number'] = group['number']
+            group['number'] = len(result['sets']) + 1
+            result['sets'].append(group)
+        if recursive:
+            children = sorted((p for p in current.iterdir()
+                               if not p.name.startswith('.') and not p.is_symlink() and p.is_dir()),
+                              key=lambda p: (p.name.casefold(), p.name), reverse=True)
+            pending.extend(children)
+    return result
+
+
 def scan_options(data):
     if not isinstance(data, dict):
         raise PreviewError('条件の指定が不正です。')
@@ -249,15 +277,18 @@ def create_app(config=None):
             return jsonify(error='ページを再読み込みしてください。'), 403
         data = request.get_json(silent=True)
         options = scan_options(data)
+        recursive = data.get('recursive', False)
+        if type(recursive) is not bool:
+            raise PreviewError('子フォルダを含める指定が不正です。')
         folder = resolve_folder(root, data.get('folder', ''))
         if not scan_lock.acquire(blocking=False):
             return jsonify(error='別の解析が実行中です。完了後に試してください。'), 409
         try:
-            result = scan_folder(folder, zone, app.config['EXIFTOOL'], *options)
+            result = scan_folders(root, folder, recursive, zone, app.config['EXIFTOOL'], options)
             result['folder'] = folder.relative_to(root).as_posix()
             for group in result['sets']:
                 for file in group['files'] + [p for p in (group['before'], group['after']) if p is not None]:
-                    path = folder / file['jpg']
+                    path = root / group['folder'] / file['jpg']
                     token = image_signer.dumps({'path': path.relative_to(root).as_posix(), 'version': file_version(path)})
                     file['thumbnail_url'] = url_for('preview_image', token=token, size='thumb')
                     file['preview_url'] = url_for('preview_image', token=token, size='preview')

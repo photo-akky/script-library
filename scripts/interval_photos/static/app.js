@@ -41,7 +41,7 @@ async function requestJSON(url, options) {
   return data;
 }
 function updateButton() {
-  byId('scan-button').disabled = selectedFolder === null || scanning || loadingFolder;
+  for (const id of ['scan-button', 'scan-recursive-button']) byId(id).disabled = selectedFolder === null || scanning || loadingFolder;
   updateCopyButtons();
 }
 async function openFolder(path) {
@@ -194,6 +194,7 @@ function renderResults(data) {
     checkbox.addEventListener('change', updateCopyButtons);
     selectLabel.append(checkbox, node('span', `セット ${group.number} · ${group.count} 枚`));
     card.append(selectLabel);
+    if (group.folder !== undefined) card.append(node('p', `撮影フォルダ：${group.folder === '.' ? '写真ルート' : group.folder} · フォルダ内セット ${group.folder_number}`, 'hint'));
     if (group.copy_error) card.append(node('p', group.copy_error, 'notice'));
     else card.append(node('p', `保存先：${group.target_folder} / ${group.copy_file_count} ファイル・${formatBytes(group.copy_bytes)}`, 'hint'));
     card.append(node('p', `${formatTime(group.start)} ～ ${formatTime(group.end)}`, 'set-time'));
@@ -255,20 +256,23 @@ byId('parent-folder').addEventListener('click', () => { if (parentFolder !== nul
 byId('scan-form').addEventListener('submit', async event => {
   event.preventDefault();
   if (scanning || loadingFolder || selectedFolder === null) return;
+  const recursive = event.submitter?.id === 'scan-recursive-button';
+  const activeButton = byId(recursive ? 'scan-recursive-button' : 'scan-button');
+  const buttonLabel = activeButton.textContent;
   scanning = true;
   updateButton();
   byId('results').hidden = true;
   currentScan = null;
   updateCopyButtons();
-  byId('scan-button').textContent = '解析中…';
-  status(`${selectedFolder || '写真ルート'} の Exif を読み取っています…`);
+  activeButton.textContent = '解析中…';
+  status(`${selectedFolder || '写真ルート'}${recursive ? ' と子フォルダ' : ''} の Exif を読み取っています…`);
   try {
-    const data = await requestJSON('/api/scan', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Scan-Token': token}, body: JSON.stringify({folder: selectedFolder, min_interval: Number(byId('min-interval').value), max_interval: Number(byId('max-interval').value), tolerance: Number(byId('tolerance').value), min_count: Number(byId('min-count').value)})});
+    const data = await requestJSON('/api/scan', {method: 'POST', headers: {'Content-Type': 'application/json', 'X-Scan-Token': token}, body: JSON.stringify({folder: selectedFolder, recursive, min_interval: Number(byId('min-interval').value), max_interval: Number(byId('max-interval').value), tolerance: Number(byId('tolerance').value), min_count: Number(byId('min-count').value)})});
     resetSavePanel();
     renderResults(data);
-    status('解析が完了しました。写真は変更していません。');
+    status(`解析が完了しました。${data.folder_count || 1} フォルダを確認しました。写真は変更していません。`);
   } catch (error) { status(error.message, true); }
-  finally { scanning = false; byId('scan-button').textContent = 'このフォルダを解析'; updateButton(); }
+  finally { scanning = false; activeButton.textContent = buttonLabel; updateButton(); }
 });
 function formatBytes(bytes) {
   if (!Number.isFinite(bytes)) return '0 B';
