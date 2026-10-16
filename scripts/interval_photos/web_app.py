@@ -292,7 +292,16 @@ def create_app(config=None):
                     token = image_signer.dumps({'path': path.relative_to(root).as_posix(), 'version': file_version(path)})
                     file['thumbnail_url'] = url_for('preview_image', token=token, size='thumb')
                     file['preview_url'] = url_for('preview_image', token=token, size='preview')
-            result['scan_id'] = copy_manager.register(folder, result['sets'])
+            extraction = {
+                'scan_folder': folder.relative_to(root).as_posix(),
+                'recursive': recursive,
+                **dict(zip(('min_interval', 'max_interval', 'tolerance', 'min_count'), options)),
+                'tolerance_rule': 'max_gap_minus_min_gap',
+                'time_source': 'Exif DateTimeOriginal + SubSecTimeOriginal + OffsetTimeOriginal',
+                'default_timezone': str(zone),
+                'analyzed_at': datetime.now(timezone.utc).isoformat(),
+            }
+            result['scan_id'] = copy_manager.register(folder, result['sets'], extraction)
             return jsonify(result)
         finally:
             scan_lock.release()

@@ -111,6 +111,16 @@ class MoveTests(unittest.TestCase):
         for name, data in self.contents.items():
             self.assertEqual((shifted / name).read_bytes(), data)
 
+    def test_registered_conditions_are_immutable(self):
+        conditions = {'recursive': False, 'parameters': {'tolerance': 1}}
+        token = self.manager.register(self.folder, [self.group], conditions)
+        conditions['parameters']['tolerance'] = 99
+        self.manager.start(token, [1], 'move')
+        job = self.wait()
+        self.assertEqual(job['state'], 'completed', job)
+        record = json.loads((self.target / 'move-log.jsonl').read_text().splitlines()[0])
+        self.assertEqual(record['extraction']['parameters']['tolerance'], 1)
+
     def test_shifted_copy_is_found_despite_unrelated_number_collision(self):
         shifted = self.shift_copy()
         self.target.mkdir()

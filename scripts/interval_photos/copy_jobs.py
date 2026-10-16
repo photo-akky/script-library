@@ -1,6 +1,6 @@
 """Copy immutable scan selections in one worker, verifying each file with SHA-256."""
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -68,6 +68,7 @@ class CopyFile:
 class CopySet:
     name: str
     files: tuple
+    extraction: str = '{}'  # Serialized to keep nested scan conditions immutable.
 
 
 class CopyManager:
@@ -79,7 +80,7 @@ class CopyManager:
         self.scans = OrderedDict()
         self.job = None
 
-    def register(self, folder, groups):
+    def register(self, folder, groups, extraction=None):
         plans = {}
         for group in groups:
             group_folder = self.source_root / group['folder'] if 'folder' in group else Path(folder)
@@ -99,7 +100,12 @@ class CopyManager:
                         sources.add(path)
                         targets.add(folded)
                         files.append(CopyFile(path, target, tuple(file_version(path))))
-                plans[group['number']] = CopySet(group['target_folder'], tuple(files))
+                conditions = dict(extraction or {})
+                conditions.setdefault('scan_folder', Path(folder).resolve().relative_to(self.source_root).as_posix())
+                conditions.update(source_folder=relative_folder.as_posix(),
+                                  set_number=group['number'], folder_set_number=folder_number)
+                plans[group['number']] = CopySet(group['target_folder'], tuple(files),
+                                                 json.dumps(conditions, ensure_ascii=False))
                 group['copy_file_count'] = len(files)
                 group['copy_bytes'] = sum(file.version[2] for file in files)
             except (CopyError, OSError) as error:
@@ -136,7 +142,7 @@ class CopyManager:
                 candidates.append(name)
         if len(candidates) > 1:
             raise CopyError('同じファイル構成の保存先が複数あります。親フォルダ内の既存コピーを確認してください。')
-        return CopySet(candidates[0], group.files) if candidates else group
+        return replace(group, name=candidates[0]) if candidates else group
 
     def start(self, scan_id, selected, operation="copy"):
         if operation not in ('copy', 'move'):
@@ -329,6 +335,7 @@ class CopyManager:
                     os.fsync(flag.fileno())
                 with (folder / log_name).open('x', encoding='utf-8') as log:
                     self._record(log, 'set_started', operation=operation, reuse=group.name in existing,
+                                 extraction=json.loads(group.extraction),
                                  files=[file.target.as_posix() for file in group.files])
             for group in sets:
                 folder = root / group.name

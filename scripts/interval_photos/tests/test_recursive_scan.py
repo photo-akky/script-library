@@ -1,3 +1,4 @@
+import json
 import tempfile
 import time
 import unittest
@@ -104,6 +105,35 @@ class RecursiveScanTests(unittest.TestCase):
         for group in data['sets']:
             self.assertFalse((self.root / group['folder'] / '0.JPG').exists())
             self.assertTrue((self.destination / group['target_folder'] / 'RAW/0.NEF').exists())
+
+    def test_logs_keep_original_extraction_conditions_after_renumbering(self):
+        self.photos(self.folder / 'a', raw=True)
+        data = self.scan(recursive=True, min_interval=5, max_interval=20,
+                         tolerance=2, min_count=5).get_json()
+        # Later analysis must not replace the selected snapshot's conditions.
+        self.scan(recursive=False, tolerance=0)
+        self.manager.start(data['scan_id'], [1])
+        self.assertEqual(self.finish()['state'], 'completed')
+        target = self.destination / data['sets'][0]['target_folder']
+        copy_record = json.loads((target / 'copy-log.jsonl').read_text().splitlines()[0])
+        conditions = copy_record['extraction']
+        for key, value in {'scan_folder': '2026', 'source_folder': '2026/a',
+                           'recursive': True, 'min_interval': 5, 'max_interval': 20,
+                           'tolerance': 2, 'min_count': 5, 'set_number': 1,
+                           'folder_set_number': 1, 'default_timezone': 'Asia/Tokyo',
+                           'tolerance_rule': 'max_gap_minus_min_gap'}.items():
+            self.assertEqual(conditions[key], value)
+        self.assertIn('analyzed_at', conditions)
+        self.assertIn('SubSecTimeOriginal', conditions['time_source'])
+        shifted = target.with_name('a-7')
+        target.rename(shifted)
+        self.manager.start(data['scan_id'], [1], 'move')
+        job = self.finish()
+        self.assertEqual(job['state'], 'completed', job)
+        move_record = json.loads((shifted / 'move-log.jsonl').read_text().splitlines()[0])
+        self.assertEqual(move_record['extraction'], conditions)
+        self.assertTrue(move_record['reuse'])
+        self.assertEqual(json.loads((shifted / 'copy-log.jsonl').read_text().splitlines()[0]), copy_record)
 
     def test_short_sequences_in_separate_folders_do_not_merge(self):
         self.photos(self.folder / 'a', count=3)
