@@ -1,4 +1,4 @@
-"""Copy immutable scan selections in one worker, verifying each file with SHA-256."""
+"""Copy or move immutable scan selections, verifying each file with SHA-256."""
 from collections import OrderedDict
 from dataclasses import dataclass, replace
 from datetime import datetime, timezone
@@ -199,7 +199,7 @@ class CopyManager:
             new_bytes = sum(file.version[2] for group in sets if group.name not in existing for file in group.files)
             if shutil.disk_usage(root).free < new_bytes:
                 raise CopyError('コピー先の空き容量が不足しています。')
-            # Reserve every set directory exclusively before starting work.
+            # Reserve every new set directory exclusively; existing copies are verified below.
             created = []
             try:
                 for group in sets:

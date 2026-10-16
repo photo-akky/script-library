@@ -1,4 +1,4 @@
-"""NAS photo classification and verified copying; source photos remain unchanged."""
+"""NAS photo classification with previews, verified copying, and explicit moves."""
 import hmac
 import json
 import math
