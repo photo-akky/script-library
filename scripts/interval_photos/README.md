@@ -87,6 +87,14 @@ Compose はアプリのディレクトリを読み取り専用で `/app` にマ�
 
 `sh deploy-nas.sh --build` で再ビルドを強制できます。Docker の操作権限がないユーザーでは `sudo docker` を使います。更新後はブラウザを再読み込みして再解析します。既存の `.env` は保持されます。
 
+PC から SSH で接続できる場合は、`main` にマージした後、次の1行で NAS に反映できます。ユーザー名・NAS のホスト名・配置先は環境に合わせて置き換えてください。
+
+```sh
+ssh user@nas.local 'cd /path/to/script-library/scripts/interval_photos && sh deploy-nas.sh'
+```
+
+この方法では `sudo` のパスワードを入力できないため、`docker` グループに入っているユーザーで接続してください。`sudo` が必要なユーザーで実行する場合は、`ssh -t` を付けてパスワードを入力します。
+
 clone したユーザーと別のユーザーで実行すると、Git が所有者の違いを理由に `git pull` を止めます。その場合は実行するユーザーで一度だけ `git config --global --add safe.directory <clone したディレクトリ>` を設定してください。
 
 停止は `sudo docker compose down`、停止済みの同じイメージで再開する場合は `sudo docker compose up -d` です。処理中の停止・再ビルドは避けてください。
