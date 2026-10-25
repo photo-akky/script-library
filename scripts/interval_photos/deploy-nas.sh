@@ -21,12 +21,13 @@ docker_cmd() {
 running=$(docker_cmd compose ps --status running -q interval-preview 2>/dev/null || true)
 
 # A restart drops in-memory job progress, so never interrupt a copy or move.
+# exec reads stdin; keep it from consuming a script fed through a pipe.
 if [ -n "$running" ]; then
     state=$(docker_cmd compose exec -T interval-preview python -c '
 import json, urllib.request
 job = json.load(urllib.request.urlopen("http://127.0.0.1:8080/api/copy/status", timeout=5))["job"]
 print(job["state"] if job else "")
-' 2>/dev/null || true)
+' </dev/null 2>/dev/null || true)
     if [ "$state" = running ]; then
         echo 'コピー・移動の処理中です。完了してから実行してください。' >&2
         exit 1
@@ -62,7 +63,7 @@ i=0
 until docker_cmd compose exec -T interval-preview python -c '
 import urllib.request
 urllib.request.urlopen("http://127.0.0.1:8080/api/copy/status", timeout=2)
-' >/dev/null 2>&1; do
+' </dev/null >/dev/null 2>&1; do
     i=$((i + 1))
     if [ "$i" -ge 30 ]; then
         echo '起動を確認できませんでした。docker compose logs で確認してください。' >&2
