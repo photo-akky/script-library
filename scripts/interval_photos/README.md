@@ -70,14 +70,24 @@ sudo docker compose logs --tail=50
 
 ### 4. 更新・停止する
 
-コピー・移動が完了してから、アプリのディレクトリで更新します。`main` をチェックアウトした配置先で実行してください。
+アプリのディレクトリで更新スクリプトを実行します。`main` をチェックアウトした配置先で実行してください。
 
 ```sh
-git pull --ff-only
-sudo docker compose up -d --build
+sh deploy-nas.sh
 ```
 
-スクリプトはイメージ内に格納するため、`git pull` や単なるコンテナ再起動だけではコードが反映されません。更新後はブラウザを再読み込みして再解析します。既存の `.env` は保持されます。
+Compose はアプリのディレクトリを読み取り専用で `/app` にマウントするため、コードの変更は再ビルドせずにコンテナの再起動だけで反映されます。スクリプトは `git pull --ff-only` の後、変更されたファイルに応じて次を選びます。コピー・移動の処理中は何もせずに終了します。
+
+| 変更 | 実行内容 |
+| --- | --- |
+| `Dockerfile`、`requirements.lock`、`.dockerignore` | `docker compose up -d --build`（再ビルド） |
+| `compose.yaml`、またはコンテナが停止中 | `docker compose up -d`（再ビルドなしで作り直し） |
+| その他のコード・画面 | `docker compose restart` |
+| 変更なし | 何もしない |
+
+`sh deploy-nas.sh --build` で再ビルドを強制できます。Docker の操作権限がないユーザーでは `sudo docker` を使います。更新後はブラウザを再読み込みして再解析します。既存の `.env` は保持されます。
+
+clone したユーザーと別のユーザーで実行すると、Git が所有者の違いを理由に `git pull` を止めます。その場合は実行するユーザーで一度だけ `git config --global --add safe.directory <clone したディレクトリ>` を設定してください。
 
 停止は `sudo docker compose down`、停止済みの同じイメージで再開する場合は `sudo docker compose up -d` です。処理中の停止・再ビルドは避けてください。
 
@@ -139,7 +149,8 @@ flowchart TB
 
 | ファイル | 役割 |
 | --- | --- |
-| `compose.yaml` / `Dockerfile` | ポート・マウント・実行権限・依存パッケージ・起動方法 |
+| `compose.yaml` / `Dockerfile` | ポート・マウント・実行権限・依存パッケージ・起動方法。コードは `/app` に読み取り専用でマウント |
+| `deploy-nas.sh` | Git 配置の更新。変更内容に応じて再ビルド・作り直し・再起動を選ぶ |
 | `web_app.py` | Flask API、Exif 読み取り、再帰解析、画像リンク発行 |
 | `interval_photos.py` | 共通のセット検出ロジックと Mac CLI |
 | `copy_jobs.py` | 解析結果の固定保存、コピー・移動、SHA-256 照合、処理ログ |
