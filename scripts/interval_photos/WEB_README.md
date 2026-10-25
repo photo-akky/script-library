@@ -96,17 +96,15 @@ sudo docker run -d --name interval-preview \
 
 ## Git で clone 済みの NAS を更新
 
-コピー・移動が完了してから、アプリのフォルダで実行します。
+アプリのフォルダで実行します。コピー・移動の処理中は何もせずに終了します。
 
 ```sh
-git pull --ff-only
+sh deploy-nas.sh
 ```
 
-コピー機能の初回導入時は `.env` に `PHOTO_DESTINATION` を追加し、既存の書き込み可能な保存先ルートを指定してください。移動機能を導入する際は、更新された Compose が写真ルートを `read_only: false` でマウントし、環境変数 `ALLOW_MOVE: "1"` を設定していることを確認してください。その後に再ビルドします。
+`git pull --ff-only` の後、`Dockerfile` や `requirements.lock` が変わったときだけ再ビルドし、コードの変更はコンテナの再起動だけで反映します。判定の詳細は [README](README.md#4-更新停止する) を参照してください。
 
-```sh
-sudo docker compose up -d --build
-```
+コピー機能の初回導入時は `.env` に `PHOTO_DESTINATION` を追加し、既存の書き込み可能な保存先ルートを指定してください。移動機能を導入する際は、更新された Compose が写真ルートを `read_only: false` でマウントし、環境変数 `ALLOW_MOVE: "1"` を設定していることを確認してください。
 
 `.env` は Git 管理対象外なので設定は保持されます。Compose にローカル変更がある場合、`git pull` が止まることがあります。ローカル変更を確認してから更新し、上書きで消さないでください。
 
@@ -126,7 +124,7 @@ cd /path/to/app/scripts/interval_photos
 sudo docker run --rm --user "$(id -u):$(id -g)" \
   --mount "type=bind,src=$PWD,dst=/app" \
   alpine:3.21 wget -O /app/update-nas.sh \
-  https://raw.githubusercontent.com/photo-akky/script-library/nas-interval-preview/scripts/interval_photos/update-nas.sh
+  https://raw.githubusercontent.com/photo-akky/script-library/main/scripts/interval_photos/update-nas.sh
 ```
 
 続いて更新・再ビルドします。2つ目のコマンドは更新成功後に実行してください。

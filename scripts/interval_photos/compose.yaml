@@ -27,6 +27,11 @@ services:
         read_only: false
         bind:
           create_host_path: false
+      # Serve the checked-out code so code-only updates need a restart, not a rebuild.
+      - type: bind
+        source: .
+        target: /app
+        read_only: true
     read_only: true
     tmpfs:
       - /tmp:size=64m,mode=1777

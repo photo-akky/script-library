@@ -17,9 +17,9 @@ print(user)
 sudo docker run --rm --user "$updater_user" \
   --mount "type=bind,src=$PWD,dst=/app" \
   alpine:3.21 sh -eu -c '
-    wget -O /tmp/source.tar.gz https://codeload.github.com/photo-akky/script-library/tar.gz/refs/heads/nas-interval-preview
+    wget -O /tmp/source.tar.gz https://codeload.github.com/photo-akky/script-library/tar.gz/refs/heads/main
     tar -xzf /tmp/source.tar.gz -C /tmp
-    source_dir=/tmp/script-library-nas-interval-preview/scripts/interval_photos
+    source_dir=/tmp/script-library-main/scripts/interval_photos
     for file in Dockerfile requirements.txt requirements.lock interval_photos.py web_app.py image_preview.py copy_jobs.py README.md WEB_README.md .dockerignore update-nas.sh; do
       test -f "$source_dir/$file"
     done
