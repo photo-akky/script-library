@@ -298,11 +298,15 @@ function updateCopyButtons() {
   byId('select-all').disabled = blocked || !currentScan.sets.some(group => !group.copy_error);
   byId('selection-summary').textContent = groups.length ? `${groups.length} セット・${groups.reduce((n,g)=>n+g.copy_file_count,0)} ファイル・${formatBytes(groups.reduce((n,g)=>n+g.copy_bytes,0))}` : 'セットを選択してください。';
 }
+function defaultOperation() {
+  // Move is the default when the server allows it; copy otherwise.
+  return moveEnabled ? 'move' : 'copy';
+}
 function resetSavePanel() {
   // An analysis must not hide an ongoing transfer or re-enable its controls.
   if (copying || copySubmitting) return;
   if (lastCopyJob) dismissedCopyJobId = lastCopyJob.id;
-  byId('operation').value = 'copy';
+  byId('operation').value = defaultOperation();
   showCopyJob(null);
 }
 function showCopyJob(job) {
@@ -340,7 +344,10 @@ async function pollCopy() {
   try {
     const data = await requestJSON('/api/copy/status');
     copyEnabled = data.copy_enabled;
+    const wasMoveEnabled = moveEnabled;
     moveEnabled = Boolean(data.move_enabled);
+    // Apply the default once move availability is known, without overriding a later choice.
+    if (moveEnabled !== wasMoveEnabled && !copying && !copySubmitting) byId('operation').value = defaultOperation();
     byId('copy-config').textContent = copyEnabled ? '保存先は PHOTO_DESTINATION で設定したルートです。移動時は予定先の親フォルダ内で既存コピーを探し、全件照合後に元ファイルを削除します。実際の保存先は処理状況に表示します。' : 'コピー先が未設定です。NAS の PHOTO_DESTINATION と保存先マウントを設定してください。';
     showCopyJob(data.job);
     if (copying) pollTimer = setTimeout(pollCopy, 1000);
